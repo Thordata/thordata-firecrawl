@@ -251,6 +251,47 @@ def search(
     _write_output(json.dumps(result, ensure_ascii=False, indent=2), out)
 
 
+@main.command(name="search-and-scrape")
+@click.argument("query")
+@click.option(
+    "--search-limit",
+    type=int,
+    default=5,
+    help="Number of search results to scrape (default: 5).",
+)
+@click.option(
+    "--format",
+    "formats",
+    multiple=True,
+    default=["markdown"],
+    help="Output format(s) when scraping, e.g. markdown, html, screenshot.",
+)
+@click.option(
+    "--out",
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Optional output file path. If omitted, print to stdout.",
+)
+@click.pass_context
+def search_and_scrape(
+    ctx: click.Context,
+    query: str,
+    search_limit: int,
+    formats: tuple[str, ...],
+    out: Optional[Path],
+) -> None:
+    """
+    Search the web and scrape the top results in one command.
+
+    This is a convenience wrapper around `search` + `scrape`.
+    """
+    client = _require_client(ctx)
+    result = client.search_and_scrape(
+      query=query,
+      search_limit=search_limit,
+      scrape_formats=list(formats),
+    )
+    _write_output(json.dumps(result, ensure_ascii=False, indent=2), out)
+
 @main.command()
 @click.argument("prompt")
 @click.option(

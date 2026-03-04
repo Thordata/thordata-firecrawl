@@ -361,6 +361,71 @@ class ThordataCrawl:
 
         return {"success": True, "data": {"web": web_results}}
 
+    def search_and_scrape(
+        self,
+        query: str,
+        search_limit: int = 5,
+        scrape_formats: Optional[List[str]] = None,
+        **options: Any,
+    ) -> Dict[str, Any]:
+        """
+        Convenience helper: search the web and then scrape the top results.
+
+        This models Firecrawl-style flows where you first call `search` and then
+        scrape the returned URLs in one combined step.
+
+        :param query: Search query string.
+        :param search_limit: Number of search results to use as seeds.
+        :param scrape_formats: Formats to pass to `scrape` for each URL.
+        :param options: Extra options forwarded to `scrape` (e.g. javascript, waitFor).
+        :return: {
+                   "success": true,
+                   "query": "...",
+                   "results": [
+                     {
+                       "search": {...},   # search result item
+                       "scrape": {...}    # scrape result for that URL
+                     }, ...
+                   ]
+                 }
+        """
+        scrape_formats = scrape_formats or ["markdown"]
+
+        search_result = self.search(query=query, limit=search_limit)
+        web_results = search_result.get("data", {}).get("web", [])
+
+        combined: List[Dict[str, Any]] = []
+        all_success = True
+
+        for item in web_results[:search_limit]:
+            url = item.get("url")
+            if not url:
+                continue
+            try:
+                scraped = self.scrape(url=url, formats=scrape_formats, **options)
+                if not scraped.get("success"):
+                    all_success = False
+                combined.append({"search": item, "scrape": scraped})
+            except Exception as e:
+                all_success = False
+                combined.append(
+                    {
+                        "search": item,
+                        "scrape": {
+                            "success": False,
+                            "url": url,
+                            "data": {},
+                            "error": str(e),
+                        },
+                    }
+                )
+
+        return {
+            "success": all_success,
+            "query": query,
+            "results": combined,
+        }
+
     def agent(self, prompt: str, urls: Optional[List[str]] = None, **options: Any) -> Dict[str, Any]:
         """
         Run an agent task with optional context from given URLs.

@@ -229,6 +229,12 @@ thordata-firecrawl search "best web scraping tools 2026" \
   --country us \
   --out search-results.json
 
+# Search then scrape the top results (combined)
+thordata-firecrawl search-and-scrape "Thordata web data API" \
+  --search-limit 3 \
+  --format markdown \
+  --out search-and-scrape.json
+
 # Agent (structured extraction - MVP)
 thordata-firecrawl agent "Extract company founders" \
   --url https://example.com/about \

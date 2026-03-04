@@ -161,6 +161,20 @@ class SearchResponse(BaseModel):
     data: Dict[str, Any]
 
 
+class SearchAndScrapeRequest(BaseModel):
+    query: str
+    searchLimit: int = Field(default=5, ge=1, le=20, alias="searchLimit")
+    formats: List[str] = Field(default=["markdown"], description="Output formats for scraping")
+    scrapeOptions: Optional[Dict[str, Any]] = Field(default=None, alias="scrapeOptions")
+
+
+class SearchAndScrapeResponse(BaseModel):
+    success: bool
+    query: str
+    results: List[Dict[str, Any]]
+    error: Optional[str] = None
+
+
 class AgentRequest(BaseModel):
     prompt: str
     urls: Optional[List[str]] = None
@@ -631,6 +645,45 @@ async def search_endpoint(request: SearchRequest, client: ThordataCrawl = Depend
     except Exception as e:
         return SearchResponse(success=False, data={"error": str(e)})
 
+
+@app.post("/v1/search-and-scrape", response_model=SearchAndScrapeResponse)
+async def search_and_scrape_endpoint(
+    request: SearchAndScrapeRequest,
+    client: ThordataCrawl = Depends(get_client),
+):
+    """
+    Combined search + scrape helper: search the web, then scrape the top results.
+    """
+    try:
+        options: Dict[str, Any] = {}
+        if request.scrapeOptions:
+            options.update(request.scrapeOptions)
+            if "waitFor" in options and "wait" not in options:
+                options["wait"] = options.pop("waitFor")
+            if "wait_for" in options and "waitForSelector" not in options:
+                options["waitForSelector"] = options.get("wait_for")
+            if "javascript" in options:
+                options["javascript"] = bool(options.get("javascript"))
+
+        result = client.search_and_scrape(
+            query=request.query,
+            search_limit=request.searchLimit,
+            scrape_formats=request.formats,
+            **options,
+        )
+        return SearchAndScrapeResponse(
+            success=bool(result.get("success")),
+            query=str(result.get("query") or request.query),
+            results=result.get("results", []),
+            error=result.get("error"),
+        )
+    except Exception as e:
+        return SearchAndScrapeResponse(
+            success=False,
+            query=request.query,
+            results=[],
+            error=str(e),
+        )
 
 @app.post("/v1/agent", response_model=AgentResponse)
 async def agent_endpoint(request: AgentRequest, client: ThordataCrawl = Depends(get_client)):
