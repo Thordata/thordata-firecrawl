@@ -46,6 +46,22 @@ def test_openapi_contains_new_endpoints():
     assert "/v1/search-and-scrape" in paths
     print("[OK] OpenAPI contains new endpoints")
 
+def test_openapi_agent_request_includes_scrapeoptions_and_formats():
+    """Ensure /v1/agent request includes new convenience fields."""
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app)
+    spec = client.get("/openapi.json").json()
+    agent_schema_ref = spec["paths"]["/v1/agent"]["post"]["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+    # Resolve #/components/schemas/AgentRequest
+    name = agent_schema_ref.split("/")[-1]
+    agent_schema = spec["components"]["schemas"][name]
+    props = agent_schema.get("properties", {})
+    assert "scrapeOptions" in props
+    assert "formats" in props
+    assert "searchLimit" in props
+    print("[OK] OpenAPI agent request includes scrapeOptions/formats/searchLimit")
+
 
 def test_crawl_async_job_flow():
     """Test async crawl job flow: submit -> poll."""
@@ -139,6 +155,7 @@ if __name__ == "__main__":
         test_health()
         test_docs()
         test_openapi_contains_new_endpoints()
+        test_openapi_agent_request_includes_scrapeoptions_and_formats()
         test_crawl_async_job_flow()
         test_crawl_pagination_and_cancel()
         print("\n[OK] All tests passed! API server is ready.")

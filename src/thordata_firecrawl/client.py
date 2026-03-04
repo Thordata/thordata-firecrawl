@@ -443,6 +443,7 @@ class ThordataCrawl:
         """
         schema = options.pop("schema", None)
         model = options.pop("model", None)
+        search_limit = int(options.pop("limit", 3) or 3)
 
         # Step 1: Gather context from URLs or search
         sources: List[str] = []
@@ -466,11 +467,11 @@ class ThordataCrawl:
             # If no URLs provided, use search to find relevant pages
             # Search for the prompt and scrape top results
             try:
-                search_results = self.search(query=prompt, limit=3)
+                search_results = self.search(query=prompt, limit=search_limit)
                 if search_results.get("success"):
                     web_results = search_results.get("data", {}).get("web", [])
                     formats = options.pop("formats", ["markdown"])
-                    for result in web_results[:3]:  # Top 3 results
+                    for result in web_results[:search_limit]:  # Top results
                         url = result.get("url", "")
                         if url:
                             try:

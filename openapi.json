@@ -604,6 +604,36 @@
               }
             ],
             "title": "Model"
+          },
+          "searchLimit": {
+            "type": "integer",
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Searchlimit",
+            "default": 3
+          },
+          "formats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Formats",
+            "description": "Formats to scrape for context",
+            "default": [
+              "markdown"
+            ]
+          },
+          "scrapeOptions": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scrapeoptions"
           }
         },
         "type": "object",

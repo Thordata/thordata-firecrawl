@@ -180,6 +180,9 @@ class AgentRequest(BaseModel):
     urls: Optional[List[str]] = None
     schema_: Optional[Dict[str, Any]] = Field(default=None, alias="schema")
     model: Optional[str] = None
+    searchLimit: int = Field(default=3, ge=1, le=10, alias="searchLimit")
+    formats: List[str] = Field(default=["markdown"], description="Formats to scrape for context")
+    scrapeOptions: Optional[Dict[str, Any]] = Field(default=None, alias="scrapeOptions")
 
 
 class AgentResponse(BaseModel):
@@ -695,12 +698,21 @@ async def search_and_scrape_endpoint(
 async def agent_endpoint(request: AgentRequest, client: ThordataCrawl = Depends(get_client)):
     """Run an agent task for structured extraction."""
     try:
-        result = client.agent(
-            prompt=request.prompt,
-            urls=request.urls,
-            schema=request.schema_,
-            model=request.model,
-        )
+        options: Dict[str, Any] = {}
+        if request.scrapeOptions:
+            options.update(request.scrapeOptions)
+            if "waitFor" in options and "wait" not in options:
+                options["wait"] = options.pop("waitFor")
+            if "wait_for" in options and "waitForSelector" not in options:
+                options["waitForSelector"] = options.get("wait_for")
+            if "javascript" in options:
+                options["javascript"] = bool(options.get("javascript"))
+
+        # Pass scrape formats for context gathering
+        options["formats"] = request.formats
+        options.setdefault("limit", int(request.searchLimit))
+
+        result = client.agent(prompt=request.prompt, urls=request.urls, schema=request.schema_, model=request.model, **options)
         if result.get("success"):
             return AgentResponse(
                 success=True,
