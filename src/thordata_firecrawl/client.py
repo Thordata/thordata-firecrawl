@@ -166,6 +166,16 @@ class ThordataCrawl:
         if unsupported:
             result["data"]["unsupported_formats"] = unsupported
 
+        # If none of the requested formats produced content, surface this as an error instead
+        # of silently returning an empty payload. This helps users quickly see when the
+        # underlying Thordata API returned no data (e.g., auth/config issues).
+        has_markdown = bool(result["data"].get("markdown"))
+        has_html = bool(result["data"].get("html"))
+        has_screenshot = bool(result["data"].get("screenshot"))
+        if not (has_markdown or has_html or has_screenshot):
+            result["success"] = False
+            result.setdefault("error", "No content returned from Thordata API. Check API key, URL, and scrape options.")
+
         return result
 
     def crawl(self, url: str, limit: int = 100, **options: Any) -> Dict[str, Any]:
