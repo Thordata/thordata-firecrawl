@@ -35,6 +35,17 @@ def test_docs():
     assert response.status_code == 200
     print("[OK] API docs accessible")
 
+def test_openapi_contains_new_endpoints():
+    """Sanity check OpenAPI contains newer endpoints."""
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app)
+    spec = client.get("/openapi.json").json()
+    paths = spec.get("paths", {})
+    assert "/v1/batch-scrape" in paths
+    assert "/v1/search-and-scrape" in paths
+    print("[OK] OpenAPI contains new endpoints")
+
 
 def test_crawl_async_job_flow():
     """Test async crawl job flow: submit -> poll."""
@@ -127,6 +138,7 @@ if __name__ == "__main__":
     try:
         test_health()
         test_docs()
+        test_openapi_contains_new_endpoints()
         test_crawl_async_job_flow()
         test_crawl_pagination_and_cancel()
         print("\n[OK] All tests passed! API server is ready.")

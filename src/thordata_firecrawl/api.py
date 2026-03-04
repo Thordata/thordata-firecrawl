@@ -319,8 +319,10 @@ async def playground() -> str:
           <label style="margin-top: 14px;">Endpoint</label>
           <select id="endpoint">
             <option value="/v1/scrape">POST /v1/scrape</option>
+            <option value="/v1/batch-scrape">POST /v1/batch-scrape</option>
             <option value="/v1/map">POST /v1/map</option>
             <option value="/v1/search">POST /v1/search</option>
+            <option value="/v1/search-and-scrape">POST /v1/search-and-scrape</option>
             <option value="/v1/crawl">POST /v1/crawl (async job)</option>
             <option value="/v1/agent">POST /v1/agent</option>
           </select>
@@ -367,10 +369,14 @@ async def playground() -> str:
         let example = {};
         if (ep === "/v1/scrape") {
           example = { url: "https://www.thordata.com", formats: ["markdown"], scrapeOptions: { javascript: true } };
+        } else if (ep === "/v1/batch-scrape") {
+          example = { urls: ["https://www.thordata.com", "https://www.thordata.com/about"], formats: ["markdown"], scrapeOptions: { javascript: true } };
         } else if (ep === "/v1/map") {
           example = { url: "https://www.thordata.com" };
         } else if (ep === "/v1/search") {
           example = { query: "Thordata web data API", limit: 5, engine: "google" };
+        } else if (ep === "/v1/search-and-scrape") {
+          example = { query: "Thordata web data API", searchLimit: 3, formats: ["markdown"], scrapeOptions: { javascript: true } };
         } else if (ep === "/v1/crawl") {
           example = { url: "https://www.thordata.com", limit: 20, maxDepth: 2, includeSubdomains: false, scrapeOptions: { javascript: true, formats: ["markdown"] } };
         } else if (ep === "/v1/agent") {
