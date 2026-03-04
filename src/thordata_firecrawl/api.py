@@ -295,6 +295,7 @@ async def playground() -> str:
             <option value="/v1/map">POST /v1/map</option>
             <option value="/v1/search">POST /v1/search</option>
             <option value="/v1/crawl">POST /v1/crawl (async job)</option>
+            <option value="/v1/agent">POST /v1/agent</option>
           </select>
 
           <label style="margin-top: 14px;">JSON Body</label>
@@ -345,6 +346,18 @@ async def playground() -> str:
           example = { query: "Thordata web data API", limit: 5, engine: "google" };
         } else if (ep === "/v1/crawl") {
           example = { url: "https://www.thordata.com", limit: 20, maxDepth: 2, includeSubdomains: false, scrapeOptions: { javascript: true, formats: ["markdown"] } };
+        } else if (ep === "/v1/agent") {
+          example = {
+            urls: ["https://www.thordata.com"],
+            prompt: "Extract basic company information (name, tagline).",
+            schema: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                tagline: { type: "string" }
+              }
+            }
+          };
         }
         bodyEl.value = JSON.stringify(example, null, 2);
       }

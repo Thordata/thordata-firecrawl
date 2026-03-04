@@ -4,11 +4,6 @@
 
 Thordata Crawl is a Firecrawl‑like Web Data API service built on top of Thordata’s AI‑native web data infrastructure. It turns websites into structured, AI‑ready data (Markdown / JSON / HTML / screenshots) for LLMs, RAG systems, and agents.
 
-### GitHub metadata (recommended)
-
-- **Description**: Thordata Firecrawl – Firecrawl‑compatible web crawling & scraping API built on Thordata, turning any website into AI‑ready Markdown/JSON/HTML/screenshots.
-- **Topics**: `firecrawl`, `thordata`, `web-scraping`, `web-crawling`, `ai-agents`, `rag`, `fastapi`, `python-package`, `openapi`, `docker`, `self-hosted`, `llm-tools`
-
 ---
 
 ## ✨ Features
