@@ -104,7 +104,7 @@ curl -X POST "http://localhost:3002/v1/scrape" \
     "formats": ["markdown", "html", "screenshot"]
   }'
 
-# Crawl a website (synchronous - returns results directly)
+# Crawl a website (async job)
 curl -X POST "http://localhost:3002/v1/crawl" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
@@ -116,6 +116,11 @@ curl -X POST "http://localhost:3002/v1/crawl" \
       "formats": ["markdown"]
     }
   }'
+
+# Poll crawl job status/results
+# (Replace JOB_ID with the id returned by POST /v1/crawl)
+curl -X GET "http://localhost:3002/v1/crawl/JOB_ID" \
+  -H "Authorization: Bearer YOUR_API_KEY"
 
 # Map (discover links)
 curl -X POST "http://localhost:3002/v1/map" \

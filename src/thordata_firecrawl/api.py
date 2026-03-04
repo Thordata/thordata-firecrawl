@@ -6,10 +6,13 @@ Provides REST API endpoints compatible with Firecrawl API structure.
 
 from __future__ import annotations
 
+import asyncio
 import os
+import time
+import uuid
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, Header, Depends
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Header, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -50,6 +53,40 @@ class CrawlStatusResponse(BaseModel):
     completed: int
     failed: Optional[int] = 0
     data: List[Dict[str, Any]]
+
+
+# ============================================================================
+# In-memory crawl job store (MVP)
+# NOTE: This is process-local and will be reset on restart. Replace with Redis/DB
+# for production deployments.
+# ============================================================================
+
+
+class _CrawlJob:
+    def __init__(self, job_id: str, request: CrawlRequest) -> None:
+        self.id = job_id
+        self.request = request
+        self.created_at = time.time()
+        self.updated_at = self.created_at
+        self.status: str = "queued"
+        self.total: int = 0
+        self.completed: int = 0
+        self.failed: int = 0
+        self.data: List[Dict[str, Any]] = []
+        self.error: Optional[str] = None
+
+    def to_status(self) -> CrawlStatusResponse:
+        return CrawlStatusResponse(
+            status=self.status,
+            total=self.total,
+            completed=self.completed,
+            failed=self.failed,
+            data=self.data,
+        )
+
+
+_CRAWL_JOBS: Dict[str, _CrawlJob] = {}
+_CRAWL_JOBS_LOCK = asyncio.Lock()
 
 
 class MapRequest(BaseModel):
@@ -149,42 +186,83 @@ async def scrape_endpoint(request: ScrapeRequest, client: ThordataCrawl = Depend
         return ScrapeResponse(success=False, error=str(e))
 
 
-@app.post("/v1/crawl", response_model=CrawlStatusResponse)
-async def crawl_submit(request: CrawlRequest, client: ThordataCrawl = Depends(get_client)):
-    """Submit a crawl job (synchronous - returns results directly)."""
+async def _run_crawl_job(job_id: str, api_key: str) -> None:
+    # Build a client inside the background task to avoid relying on request-scoped dependencies.
+    base_url = os.getenv("THORDATA_BASE_URL")
+    client = ThordataCrawl(api_key=api_key, base_url=base_url)
+
+    async with _CRAWL_JOBS_LOCK:
+        job = _CRAWL_JOBS.get(job_id)
+        if job is None:
+            return
+        job.status = "running"
+        job.updated_at = time.time()
+
     try:
-        options = {}
-        if request.scrapeOptions:
-            options.update(request.scrapeOptions)
+        options: Dict[str, Any] = {}
+        if job.request.scrapeOptions:
+            options.update(job.request.scrapeOptions)
         if "formats" not in options:
             options["formats"] = ["markdown"]
 
         result = client.crawl(
-            url=request.url,
-            limit=request.limit,
-            maxDepth=request.maxDepth,
-            includeSubdomains=request.includeSubdomains,
+            url=job.request.url,
+            limit=job.request.limit,
+            maxDepth=job.request.maxDepth,
+            includeSubdomains=job.request.includeSubdomains,
             **options,
         )
 
-        # Return results directly (synchronous mode)
-        # TODO: Implement async job queue for large crawls
-        return CrawlStatusResponse(
-            status=result.get("status", "completed"),
-            total=result.get("total", 0),
-            completed=result.get("completed", 0),
-            failed=result.get("failed", 0),
-            data=result.get("data", []),
-        )
+        async with _CRAWL_JOBS_LOCK:
+            job = _CRAWL_JOBS.get(job_id)
+            if job is None:
+                return
+            job.status = "completed"
+            job.total = int(result.get("total", 0) or 0)
+            job.completed = int(result.get("completed", 0) or 0)
+            job.failed = int(result.get("failed", 0) or 0)
+            job.data = list(result.get("data", []) or [])
+            job.updated_at = time.time()
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        async with _CRAWL_JOBS_LOCK:
+            job = _CRAWL_JOBS.get(job_id)
+            if job is None:
+                return
+            job.status = "failed"
+            job.error = str(e)
+            job.updated_at = time.time()
+
+
+@app.post("/v1/crawl", response_model=CrawlJobResponse)
+async def crawl_submit(
+    request: CrawlRequest,
+    background_tasks: BackgroundTasks,
+    api_key: str = Depends(get_api_key),
+):
+    """Submit an async crawl job. Use GET /v1/crawl/{id} to poll status/results."""
+    job_id = uuid.uuid4().hex
+    job = _CrawlJob(job_id, request)
+
+    async with _CRAWL_JOBS_LOCK:
+        _CRAWL_JOBS[job_id] = job
+
+    background_tasks.add_task(_run_crawl_job, job_id, api_key)
+
+    return CrawlJobResponse(success=True, id=job_id, url=f"/v1/crawl/{job_id}")
 
 
 @app.get("/v1/crawl/{job_id}", response_model=CrawlStatusResponse)
-async def crawl_status(job_id: str, client: ThordataCrawl = Depends(get_client)):
-    """Get crawl job status (placeholder - returns cached result for now)."""
-    # TODO: Implement proper job queue and status tracking
-    raise HTTPException(status_code=501, detail="Async crawl jobs not yet implemented. Use POST /v1/crawl for synchronous results.")
+async def crawl_status(job_id: str):
+    """Get crawl job status and results."""
+    async with _CRAWL_JOBS_LOCK:
+        job = _CRAWL_JOBS.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Crawl job not found")
+        # If failed, surface error via HTTP status but keep the shape stable.
+        if job.status == "failed" and job.error:
+            raise HTTPException(status_code=500, detail=job.error)
+        return job.to_status()
 
 
 @app.post("/v1/map", response_model=MapResponse)

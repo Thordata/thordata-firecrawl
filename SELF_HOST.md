@@ -55,7 +55,8 @@ Once running, the API provides:
 
 - `GET /health` - Health check
 - `POST /v1/scrape` - Scrape a single URL
-- `POST /v1/crawl` - Crawl a website
+- `POST /v1/crawl` - Submit an async crawl job (returns job id)
+- `GET /v1/crawl/{id}` - Poll crawl job status/results
 - `POST /v1/map` - Discover URLs on a website
 - `POST /v1/search` - Search the web
 - `POST /v1/agent` - Extract structured data using LLM
