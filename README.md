@@ -111,6 +111,18 @@ curl -X POST "http://localhost:3002/v1/scrape" \
     "formats": ["markdown", "html", "screenshot"]
   }'
 
+# Batch scrape multiple pages
+curl -X POST "http://localhost:3002/v1/batch-scrape" \
+  -H "Authorization: Bearer YOUR_SCRAPER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "urls": [
+      "https://www.thordata.com",
+      "https://www.thordata.com/about"
+    ],
+    "formats": ["markdown"]
+  }'
+
 # Crawl a website (async job)
 curl -X POST "http://localhost:3002/v1/crawl" \
   -H "Authorization: Bearer YOUR_API_KEY" \
@@ -189,6 +201,11 @@ Interactive API documentation is available at `http://localhost:3002/docs` (Swag
 thordata-firecrawl scrape https://www.thordata.com \
   --format markdown --format html --format screenshot \
   --out thordata.md
+
+# Batch scrape multiple URLs
+thordata-firecrawl batch-scrape https://www.thordata.com https://docs.thordata.com \
+  --format markdown \
+  --out batch-result.json
 
 # Crawl a website (discovers and scrapes multiple pages)
 thordata-firecrawl crawl https://doc.thordata.com \

@@ -41,6 +41,19 @@ class ScrapeResponse(BaseModel):
     error: Optional[str] = None
 
 
+class BatchScrapeRequest(BaseModel):
+    urls: List[str]
+    formats: List[str] = Field(default=["markdown"], description="Output formats")
+    scrapeOptions: Optional[Dict[str, Any]] = Field(default=None, alias="scrapeOptions")
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class BatchScrapeResponse(BaseModel):
+    success: bool
+    results: List[Dict[str, Any]]
+    error: Optional[str] = None
+
+
 class CrawlRequest(BaseModel):
     url: str
     limit: int = Field(default=100, ge=1, le=1000)
@@ -433,6 +446,40 @@ async def scrape_endpoint(request: ScrapeRequest, client: ThordataCrawl = Depend
         )
     except Exception as e:
         return ScrapeResponse(success=False, error=str(e))
+
+
+@app.post("/v1/batch-scrape", response_model=BatchScrapeResponse)
+async def batch_scrape_endpoint(
+    request: BatchScrapeRequest,
+    client: ThordataCrawl = Depends(get_client),
+):
+    """
+    Batch scrape multiple URLs (Firecrawl-style batch endpoint).
+    """
+    try:
+        options: Dict[str, Any] = {}
+        if request.scrapeOptions:
+            options.update(request.scrapeOptions)
+            # Firecrawl-ish to our Python client options
+            if "waitFor" in options and "wait" not in options:
+                options["wait"] = options.pop("waitFor")
+            if "wait_for" in options and "waitForSelector" not in options:
+                options["waitForSelector"] = options.get("wait_for")
+            if "javascript" in options:
+                options["javascript"] = bool(options.get("javascript"))
+
+        result = client.batch_scrape(
+            urls=request.urls,
+            formats=request.formats,
+            **options,
+        )
+        return BatchScrapeResponse(
+            success=bool(result.get("success")),
+            results=result.get("results", []),
+            error=result.get("error"),
+        )
+    except Exception as e:
+        return BatchScrapeResponse(success=False, results=[], error=str(e))
 
 
 async def _run_crawl_job(job_id: str, api_key: str) -> None:

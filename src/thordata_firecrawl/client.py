@@ -178,6 +178,51 @@ class ThordataCrawl:
 
         return result
 
+    def batch_scrape(self, urls: List[str], formats: Optional[List[str]] = None, **options: Any) -> Dict[str, Any]:
+        """
+        Scrape multiple URLs in one call (Firecrawl-style batch scrape).
+
+        This is a thin convenience wrapper that simply calls `scrape` for each
+        URL and aggregates the results. For now it runs sequentially; future
+        versions may add concurrency controls.
+
+        :param urls: List of URLs to scrape.
+        :param formats: Output formats for each URL (default: ["markdown"]).
+        :param options: Extra scrape options, same as `scrape()`.
+        :return: Firecrawl-like batch result:
+                 {
+                   "success": true,
+                   "results": [
+                     { "url": "...", "success": true, "data": {...} },
+                     ...
+                   ]
+                 }
+        """
+        formats = formats or ["markdown"]
+        results: List[Dict[str, Any]] = []
+        all_success = True
+
+        for url in urls:
+            try:
+                item = self.scrape(url=url, formats=formats, **options)
+            except Exception as e:
+                all_success = False
+                item = {
+                    "success": False,
+                    "url": url,
+                    "data": {},
+                    "error": str(e),
+                }
+            else:
+                if not item.get("success"):
+                    all_success = False
+            results.append(item)
+
+        return {
+            "success": all_success,
+            "results": results,
+        }
+
     def crawl(self, url: str, limit: int = 100, **options: Any) -> Dict[str, Any]:
         """
         Crawl a website starting from the given URL.

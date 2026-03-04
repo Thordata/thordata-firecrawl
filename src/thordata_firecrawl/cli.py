@@ -83,6 +83,39 @@ def scrape(ctx: click.Context, url: str, formats: tuple[str, ...], out: Optional
     _write_output(json.dumps(result, ensure_ascii=False, indent=2), out)
 
 
+@main.command(name="batch-scrape")
+@click.argument("url", nargs=-1)
+@click.option(
+    "--format",
+    "formats",
+    multiple=True,
+    default=["markdown"],
+    help="Output format(s), e.g. markdown, html, screenshot.",
+)
+@click.option(
+    "--out",
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Optional output file path. If omitted, print to stdout.",
+)
+@click.pass_context
+def batch_scrape(
+    ctx: click.Context,
+    url: tuple[str, ...],
+    formats: tuple[str, ...],
+    out: Optional[Path],
+) -> None:
+    """
+    Scrape multiple URLs in one command (batch scrape).
+
+    Example:
+      thordata-firecrawl batch-scrape https://a.com https://b.com --format markdown
+    """
+    if not url:
+        raise click.UsageError("At least one URL is required.")
+    client = _require_client(ctx)
+    result = client.batch_scrape(urls=list(url), formats=list(formats))
+    _write_output(json.dumps(result, ensure_ascii=False, indent=2), out)
+
 @main.command()
 @click.argument("url")
 @click.option("--limit", type=int, default=100, help="Maximum number of pages to crawl.")
