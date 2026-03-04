@@ -132,6 +132,18 @@ def batch_scrape(
     help="Include subdomains when crawling.",
 )
 @click.option(
+    "--include-path",
+    "include_paths",
+    multiple=True,
+    help="Only crawl URLs whose path matches this wildcard (fnmatch), e.g. /docs/* (repeatable).",
+)
+@click.option(
+    "--exclude-path",
+    "exclude_paths",
+    multiple=True,
+    help="Exclude URLs whose path matches this wildcard (fnmatch), e.g. /privacy* (repeatable).",
+)
+@click.option(
     "--concurrency",
     type=int,
     default=5,
@@ -156,6 +168,8 @@ def crawl(
     limit: int,
     max_depth: Optional[int],
     include_subdomains: bool,
+    include_paths: tuple[str, ...],
+    exclude_paths: tuple[str, ...],
     concurrency: int,
     formats: tuple[str, ...],
     out: Optional[Path],
@@ -171,6 +185,8 @@ def crawl(
         limit=limit,
         maxDepth=max_depth,
         includeSubdomains=include_subdomains,
+        includePaths=list(include_paths) if include_paths else None,
+        excludePaths=list(exclude_paths) if exclude_paths else None,
         concurrency=concurrency,
         formats=list(formats),
     )

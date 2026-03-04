@@ -10,6 +10,11 @@ import asyncio
 import os
 import time
 import uuid
+import json
+import hashlib
+import hmac
+import urllib.request
+import urllib.error
 from typing import Any, Dict, List, Optional
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Header, Depends, Query
@@ -54,12 +59,21 @@ class BatchScrapeResponse(BaseModel):
     error: Optional[str] = None
 
 
+class WebhookConfig(BaseModel):
+    url: str = Field(description="Webhook URL to POST crawl job events to")
+    headers: Optional[Dict[str, str]] = Field(default=None, description="Optional extra headers for webhook request")
+    secret: Optional[str] = Field(default=None, description="Optional secret for HMAC-SHA256 signature")
+
+
 class CrawlRequest(BaseModel):
     url: str
     limit: int = Field(default=100, ge=1, le=1000)
     scrapeOptions: Optional[Dict[str, Any]] = Field(default=None, alias="scrapeOptions")
     includeSubdomains: bool = Field(default=False, alias="includeSubdomains")
     maxDepth: Optional[int] = Field(default=None, alias="maxDepth", ge=1, le=10)
+    includePaths: Optional[List[str]] = Field(default=None, alias="includePaths", description="Only crawl URLs whose path matches any of these wildcard patterns (fnmatch)")
+    excludePaths: Optional[List[str]] = Field(default=None, alias="excludePaths", description="Do not crawl URLs whose path matches any of these wildcard patterns (fnmatch)")
+    webhook: Optional[WebhookConfig] = Field(default=None, description="Optional webhook to receive crawl job completion/failure events")
 
 
 class CrawlJobResponse(BaseModel):
@@ -381,7 +395,16 @@ async def playground() -> str:
         } else if (ep === "/v1/search-and-scrape") {
           example = { query: "Thordata web data API", searchLimit: 3, formats: ["markdown"], scrapeOptions: { javascript: true } };
         } else if (ep === "/v1/crawl") {
-          example = { url: "https://www.thordata.com", limit: 20, maxDepth: 2, includeSubdomains: false, scrapeOptions: { javascript: true, formats: ["markdown"] } };
+          example = {
+            url: "https://www.thordata.com",
+            limit: 20,
+            maxDepth: 2,
+            includeSubdomains: false,
+            includePaths: ["/*"],
+            excludePaths: ["/privacy*", "/terms*"],
+            webhook: { url: "https://example.com/webhook", headers: { "Authorization": "Bearer YOUR_WEBHOOK_TOKEN" } },
+            scrapeOptions: { javascript: true, formats: ["markdown"] }
+          };
         } else if (ep === "/v1/agent") {
           example = {
             urls: ["https://www.thordata.com"],
@@ -505,6 +528,47 @@ async def batch_scrape_endpoint(
         return BatchScrapeResponse(success=False, results=[], error=str(e))
 
 
+def _webhook_signature(secret: str, body: bytes) -> str:
+    sig = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+    return f"sha256={sig}"
+
+
+def _post_webhook(url: str, body: bytes, headers: Dict[str, str]) -> None:
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        resp.read()
+
+
+async def _deliver_webhook(webhook: WebhookConfig, payload: Dict[str, Any], event: str, job_id: str) -> None:
+    # Best-effort delivery with small retries. Never raise to job runner.
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+    headers: Dict[str, str] = {}
+    if webhook.headers:
+        headers.update({str(k): str(v) for k, v in webhook.headers.items()})
+
+    headers["Content-Type"] = "application/json"
+    headers["User-Agent"] = "thordata-firecrawl-webhook/0.1"
+    headers["X-Thordata-Event"] = event
+    headers["X-Thordata-Job-Id"] = job_id
+    if webhook.secret:
+        headers["X-Thordata-Signature"] = _webhook_signature(webhook.secret, body)
+
+    last_err: Optional[str] = None
+    for delay in (0.0, 0.5, 1.0):
+        if delay:
+            await asyncio.sleep(delay)
+        try:
+            await asyncio.to_thread(_post_webhook, webhook.url, body, headers)
+            return
+        except Exception as e:
+            last_err = str(e)
+            continue
+
+    # Swallow errors (best-effort). Keeping this value for potential future logging.
+    _ = last_err
+
+
 async def _run_crawl_job(job_id: str, api_key: str) -> None:
     # Build a client inside the background task to avoid relying on request-scoped dependencies.
     base_url = os.getenv("THORDATA_BASE_URL")
@@ -521,6 +585,10 @@ async def _run_crawl_job(job_id: str, api_key: str) -> None:
         options: Dict[str, Any] = {}
         if job.request.scrapeOptions:
             options.update(job.request.scrapeOptions)
+        if job.request.includePaths:
+            options["includePaths"] = job.request.includePaths
+        if job.request.excludePaths:
+            options["excludePaths"] = job.request.excludePaths
         if "formats" not in options:
             options["formats"] = ["markdown"]
 
@@ -553,6 +621,20 @@ async def _run_crawl_job(job_id: str, api_key: str) -> None:
             job.data = list(result.get("data", []) or [])
             job.updated_at = time.time()
 
+        # Webhook (best-effort)
+        if job.request.webhook:
+            payload = {
+                "event": "crawl.completed",
+                "id": job_id,
+                "status": job.status,
+                "total": job.total,
+                "completed": job.completed,
+                "failed": job.failed,
+                "data": job.data,
+                "error": None,
+            }
+            await _deliver_webhook(job.request.webhook, payload, "crawl.completed", job_id)
+
     except Exception as e:
         async with _CRAWL_JOBS_LOCK:
             job = _CRAWL_JOBS.get(job_id)
@@ -561,6 +643,20 @@ async def _run_crawl_job(job_id: str, api_key: str) -> None:
             job.status = "failed"
             job.error = str(e)
             job.updated_at = time.time()
+
+        # Webhook (best-effort)
+        if job.request.webhook:
+            payload = {
+                "event": "crawl.failed",
+                "id": job_id,
+                "status": job.status,
+                "total": job.total,
+                "completed": job.completed,
+                "failed": job.failed,
+                "data": job.data,
+                "error": job.error,
+            }
+            await _deliver_webhook(job.request.webhook, payload, "crawl.failed", job_id)
 
 
 @app.post("/v1/crawl", response_model=CrawlJobResponse)

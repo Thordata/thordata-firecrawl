@@ -829,6 +829,47 @@
               }
             ],
             "title": "Maxdepth"
+          },
+          "includePaths": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Includepaths",
+            "description": "Only crawl URLs whose path matches any of these wildcard patterns (fnmatch)"
+          },
+          "excludePaths": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excludepaths",
+            "description": "Do not crawl URLs whose path matches any of these wildcard patterns (fnmatch)"
+          },
+          "webhook": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WebhookConfig"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional webhook to receive crawl job completion/failure events"
           }
         },
         "type": "object",
@@ -1217,6 +1258,47 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "WebhookConfig": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "Webhook URL to POST crawl job events to"
+          },
+          "headers": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headers",
+            "description": "Optional extra headers for webhook request"
+          },
+          "secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret",
+            "description": "Optional secret for HMAC-SHA256 signature"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "WebhookConfig"
       }
     }
   }

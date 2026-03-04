@@ -73,6 +73,10 @@ Open:
 
 ## API Endpoints
 
+- Crawl advanced options (on `POST /v1/crawl`):
+  - `includePaths` / `excludePaths`: wildcard path filters (fnmatch), e.g. `/docs/*`
+  - `webhook`: best-effort callback on `crawl.completed` / `crawl.failed`
+
 Once running, the API provides:
 
 - `GET /health` - Health check

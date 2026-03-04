@@ -133,6 +133,12 @@ curl -X POST "http://localhost:3002/v1/crawl" \
     "url": "https://doc.thordata.com",
     "limit": 10,
     "maxDepth": 2,
+    "includePaths": ["/docs/*"],
+    "excludePaths": ["/privacy*", "/terms*"],
+    "webhook": {
+      "url": "https://example.com/webhook",
+      "headers": {"Authorization": "Bearer YOUR_WEBHOOK_TOKEN"}
+    },
     "scrapeOptions": {
       "formats": ["markdown"]
     }

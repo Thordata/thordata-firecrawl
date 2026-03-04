@@ -247,6 +247,9 @@ class ThordataCrawl:
         include_subdomains = options.pop("includeSubdomains", options.pop("include_subdomains", False))
         concurrency = options.pop("concurrency", 5)
 
+        include_paths = options.pop("includePaths", options.pop("include_paths", None))
+        exclude_paths = options.pop("excludePaths", options.pop("exclude_paths", None))
+
         # Ensure we fetch HTML for link discovery
         if "html" not in formats:
             formats = list(formats) + ["html"]
@@ -259,6 +262,8 @@ class ThordataCrawl:
             include_subdomains=include_subdomains,
             formats=formats,
             concurrency=concurrency,
+            include_paths=include_paths,
+            exclude_paths=exclude_paths,
             **options,
         )
 

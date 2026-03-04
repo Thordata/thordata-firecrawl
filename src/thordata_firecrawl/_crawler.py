@@ -8,6 +8,7 @@ normalizing URLs, and managing crawl queues.
 from __future__ import annotations
 
 import html.parser
+import fnmatch
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -114,12 +115,37 @@ def extract_title_from_html(html_content: str) -> Optional[str]:
         return None
 
 
+def _match_any_pattern(url: str, patterns: Optional[List[str]]) -> bool:
+    # Match URL against wildcard patterns (fnmatch).
+    if not patterns:
+        return False
+    parsed = urlparse(url)
+    path = parsed.path or "/"
+    for pat in patterns:
+        if not pat:
+            continue
+        target = url if pat.startswith("http://") or pat.startswith("https://") else path
+        if fnmatch.fnmatchcase(target, pat):
+            return True
+    return False
+
+
+def _url_allowed(url: str, include_paths: Optional[List[str]], exclude_paths: Optional[List[str]]) -> bool:
+    # Apply include/exclude rules. include first, then exclude.
+    if include_paths and not _match_any_pattern(url, include_paths):
+        return False
+    if exclude_paths and _match_any_pattern(url, exclude_paths):
+        return False
+    return True
+
 def discover_links(
     html_content: str,
     base_url: str,
     seed_url: str,
     include_subdomains: bool = False,
     max_depth: Optional[int] = None,
+    include_paths: Optional[List[str]] = None,
+    exclude_paths: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Discover and filter links from HTML content.
@@ -134,6 +160,8 @@ def discover_links(
     links: List[Dict[str, Any]] = []
 
     for link in raw_links:
+        if not _url_allowed(link, include_paths=include_paths, exclude_paths=exclude_paths):
+            continue
         normalized = normalize_url(link)
         if normalized in seen:
             continue
@@ -167,6 +195,8 @@ def crawl_bfs(
     include_subdomains: bool = False,
     formats: Optional[List[str]] = None,
     concurrency: int = 5,
+    include_paths: Optional[List[str]] = None,
+    exclude_paths: Optional[List[str]] = None,
     **scrape_options: Any,
 ) -> Dict[str, Any]:
     """
@@ -193,6 +223,8 @@ def crawl_bfs(
         batch: List[Tuple[str, int]] = []
         while queue and len(batch) < concurrency and len(results) + len(batch) < limit:
             url, depth = queue.popleft()
+            if depth != 0 and not _url_allowed(url, include_paths=include_paths, exclude_paths=exclude_paths):
+                continue
             normalized = normalize_url(url)
             if normalized in visited:
                 continue

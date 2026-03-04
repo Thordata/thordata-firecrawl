@@ -149,6 +149,68 @@ def test_crawl_pagination_and_cancel():
     assert cancel.json()["success"] is True
     print("[OK] Pagination and cancel passed")
 
+
+
+def test_crawl_url_filtering_rules():
+    """Test include/exclude filtering in BFS crawler (no network)."""
+    from thordata_firecrawl._crawler import crawl_bfs
+
+    pages = {
+        "https://example.com/": '<html><body>'
+        '<a href="/docs/intro">intro</a>'
+        '<a href="/docs/hidden">hidden</a>'
+        '<a href="/blog/post1">post1</a>'
+        '</body></html>',
+        "https://example.com/docs/intro": '<html><body><a href="/docs/hidden">h</a></body></html>',
+        "https://example.com/blog/post1": '<html><body>blog</body></html>',
+        "https://example.com/docs/hidden": '<html><body>secret</body></html>',
+    }
+
+    def fake_scrape(url: str, formats, **opts):
+        html = pages.get(url, '')
+        return {
+            "success": True,
+            "data": {
+                "html": html,
+                "markdown": "md",
+                "screenshot": None,
+            },
+        }
+
+    r = crawl_bfs(
+        scrape_func=fake_scrape,
+        seed_url="https://example.com/",
+        limit=10,
+        max_depth=2,
+        include_subdomains=False,
+        formats=["html", "markdown"],
+        concurrency=1,
+        include_paths=["/docs/*"],
+        exclude_paths=["*/hidden"],
+    )
+
+    urls = sorted([x.get("metadata", {}).get("sourceUrl") for x in r.get("data", [])])
+    assert "https://example.com/" in urls
+    assert "https://example.com/docs/intro" in urls
+    assert "https://example.com/docs/hidden" not in urls
+    assert "https://example.com/blog/post1" not in urls
+    print("[OK] Crawl include/exclude filtering works")
+
+
+def test_openapi_crawl_request_includes_webhook_and_filters():
+    """Ensure /v1/crawl request exposes webhook + include/exclude patterns."""
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app)
+    spec = client.get("/openapi.json").json()
+    crawl_schema_ref = spec["paths"]["/v1/crawl"]["post"]["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+    name = crawl_schema_ref.split("/")[-1]
+    crawl_schema = spec["components"]["schemas"][name]
+    props = crawl_schema.get("properties", {})
+    assert "includePaths" in props
+    assert "excludePaths" in props
+    assert "webhook" in props
+    print("[OK] OpenAPI crawl request includes webhook/includePaths/excludePaths")
 if __name__ == "__main__":
     print("Testing Thordata Firecrawl API...")
     try:
@@ -156,6 +218,8 @@ if __name__ == "__main__":
         test_docs()
         test_openapi_contains_new_endpoints()
         test_openapi_agent_request_includes_scrapeoptions_and_formats()
+        test_openapi_crawl_request_includes_webhook_and_filters()
+        test_crawl_url_filtering_rules()
         test_crawl_async_job_flow()
         test_crawl_pagination_and_cancel()
         print("\n[OK] All tests passed! API server is ready.")
