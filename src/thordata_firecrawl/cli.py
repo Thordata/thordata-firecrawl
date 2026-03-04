@@ -8,6 +8,14 @@ import click
 
 from .client import ThordataCrawl
 
+try:
+    from dotenv import load_dotenv
+except Exception:  # pragma: no cover - optional dependency at runtime
+    load_dotenv = None
+
+if load_dotenv is not None:
+    load_dotenv()
+
 
 def _write_output(output: str, out: Optional[Path]) -> None:
     if out:
@@ -20,8 +28,8 @@ def _write_output(output: str, out: Optional[Path]) -> None:
 @click.group(invoke_without_command=True)
 @click.option(
     "--api-key",
-    envvar="THORDATA_API_KEY",
-    help="Thordata API key. Can also be provided via THORDATA_API_KEY env var.",
+    envvar=["THORDATA_API_KEY", "THORDATA_SCRAPER_TOKEN"],
+    help="Thordata API key. Supports THORDATA_API_KEY or THORDATA_SCRAPER_TOKEN.",
 )
 @click.option(
     "--base-url",
@@ -44,7 +52,9 @@ def _require_client(ctx: click.Context) -> ThordataCrawl:
     api_key = obj.get("api_key") if isinstance(obj, dict) else None
     base_url = obj.get("base_url") if isinstance(obj, dict) else None
     if not api_key:
-        raise click.UsageError("API key is required. Set --api-key or THORDATA_API_KEY.")
+        raise click.UsageError(
+            "API key is required. Set --api-key or THORDATA_API_KEY / THORDATA_SCRAPER_TOKEN."
+        )
     return ThordataCrawl(api_key=api_key, base_url=base_url)
 
 

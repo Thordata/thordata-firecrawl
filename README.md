@@ -26,6 +26,7 @@ Thordata Crawl is a Firecrawl‑like Web Data API service built on top of Thorda
 - `run_server.py`: Simple script to run the API server locally
 - `test_api.py`: Quick test script to verify API functionality
 - `.env.example`: Environment variable template
+- `openapi.json`: OpenAPI specification exported from FastAPI app
 - `src/thordata_firecrawl/`: Core Python package
   - `__init__.py`: Package exports
   - `client.py`: High-level Python client (`ThordataCrawl`)
@@ -90,6 +91,9 @@ docker-compose up -d
 # Or locally
 pip install -e ".[server]"
 python run_server.py
+
+# OpenAPI spec (for SDK generation / client integration)
+python export_openapi.py  # writes openapi.json in repo root
 ```
 
 Scrape a single page:

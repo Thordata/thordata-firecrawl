@@ -18,6 +18,14 @@ from pydantic import BaseModel, Field
 
 from .client import ThordataCrawl
 
+try:
+    from dotenv import load_dotenv
+except Exception:  # pragma: no cover - optional dependency at runtime
+    load_dotenv = None
+
+if load_dotenv is not None:
+    load_dotenv()
+
 
 # Request/Response Models
 class ScrapeRequest(BaseModel):
@@ -166,10 +174,13 @@ app = FastAPI(
 def get_api_key(authorization: Optional[str] = Header(None)) -> str:
     """Extract API key from Authorization header."""
     if not authorization:
-        # Fallback to environment variable
-        api_key = os.getenv("THORDATA_API_KEY")
+        # Fallback to environment variables (both naming conventions supported)
+        api_key = os.getenv("THORDATA_API_KEY") or os.getenv("THORDATA_SCRAPER_TOKEN")
         if not api_key:
-            raise HTTPException(status_code=401, detail="API key required")
+            raise HTTPException(
+                status_code=401,
+                detail="API key required (THORDATA_API_KEY or THORDATA_SCRAPER_TOKEN)",
+            )
         return api_key
 
     # Support both "Bearer <key>" and direct key
