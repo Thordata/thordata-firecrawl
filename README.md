@@ -88,8 +88,8 @@ docker-compose up -d
 
 # Or locally
 pip install -e ".[server]"
-python run_server.py --port 3002
-# Or change port:
+python run_server.py
+# If port is in use, change it:
 #   python run_server.py --port 3003
 
 # Easiest way to try (no need to learn Swagger first)

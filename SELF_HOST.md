@@ -45,6 +45,7 @@ export OPENAI_API_KEY=your-openai-key  # Optional, for agent functionality
 3. Run the server:
 ```bash
 python run_server.py
+# Default port is 3002
 # Or use uvicorn directly:
 uvicorn thordata_firecrawl.api:app --host 0.0.0.0 --port 3002
 ```
