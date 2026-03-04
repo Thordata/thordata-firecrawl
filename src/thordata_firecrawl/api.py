@@ -13,7 +13,7 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Header, Depends, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from .client import ThordataCrawl
@@ -203,6 +203,196 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/", response_class=HTMLResponse)
+async def root() -> str:
+    return """
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Thordata Firecrawl API</title>
+    <style>
+      body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin: 24px; color: #111827; }
+      code { background: #f3f4f6; padding: 2px 6px; border-radius: 6px; }
+      a { color: #2563eb; text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; max-width: 920px; }
+      .muted { color: #6b7280; }
+      ul { line-height: 1.7; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h2 style="margin: 0 0 8px 0;">🔥 Thordata Firecrawl API</h2>
+      <div class="muted">Local helper page for quick testing (no domain / no fancy website required).</div>
+      <ul>
+        <li><a href="/docs">Swagger UI</a> (interactive API docs)</li>
+        <li><a href="/redoc">ReDoc</a></li>
+        <li><a href="/playground">Playground</a> (copy/paste friendly)</li>
+        <li><a href="/openapi.json">OpenAPI JSON</a></li>
+        <li><code>GET /health</code> → {"status":"ok"}</li>
+      </ul>
+    </div>
+  </body>
+</html>
+""".strip()
+
+
+@app.get("/playground", response_class=HTMLResponse)
+async def playground() -> str:
+    # Minimal local playground so new users can "just use it" without learning Swagger first.
+    return """
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Thordata Firecrawl Playground</title>
+    <style>
+      body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin: 24px; color: #111827; }
+      input, textarea, select, button { font: inherit; }
+      .row { display: flex; gap: 12px; flex-wrap: wrap; }
+      .col { flex: 1; min-width: 320px; }
+      .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; }
+      label { display:block; font-weight: 600; margin: 8px 0 6px; }
+      input[type=text], textarea, select { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #d1d5db; }
+      textarea { min-height: 160px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+      button { padding: 10px 14px; border-radius: 10px; border: 1px solid #111827; background: #111827; color: white; cursor: pointer; }
+      button.secondary { background: white; color: #111827; border-color: #d1d5db; }
+      .muted { color: #6b7280; font-size: 13px; line-height: 1.4; }
+      pre { background: #0b1020; color: #e5e7eb; padding: 12px; border-radius: 12px; overflow: auto; }
+      code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+      .ok { color: #16a34a; }
+      .bad { color: #dc2626; }
+      a { color: #2563eb; text-decoration: none; }
+      a:hover { text-decoration: underline; }
+    </style>
+  </head>
+  <body>
+    <div class="card" style="margin-bottom: 12px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap: 12px; flex-wrap: wrap;">
+        <div>
+          <h2 style="margin:0;">🧪 Thordata Firecrawl Playground</h2>
+          <div class="muted">Tip: If you have <code>THORDATA_SCRAPER_TOKEN</code>, use it (Universal API requires scraper_token for clean markdown/html).</div>
+        </div>
+        <div class="muted">
+          <a href="/docs">Swagger UI</a> · <a href="/">Home</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col">
+        <div class="card">
+          <label>Authorization (Bearer token)</label>
+          <input id="token" type="text" placeholder="paste token here (stored in your browser localStorage)" />
+          <div class="muted">This page runs locally. The token is only stored in your browser's localStorage.</div>
+
+          <label style="margin-top: 14px;">Endpoint</label>
+          <select id="endpoint">
+            <option value="/v1/scrape">POST /v1/scrape</option>
+            <option value="/v1/map">POST /v1/map</option>
+            <option value="/v1/search">POST /v1/search</option>
+            <option value="/v1/crawl">POST /v1/crawl (async job)</option>
+          </select>
+
+          <label style="margin-top: 14px;">JSON Body</label>
+          <textarea id="body"></textarea>
+
+          <div style="margin-top: 12px; display:flex; gap: 10px; flex-wrap: wrap;">
+            <button id="send">Send</button>
+            <button id="fill" class="secondary">Fill example</button>
+            <button id="clear" class="secondary">Clear</button>
+          </div>
+
+          <div class="muted" style="margin-top: 12px;">
+            For crawl jobs, copy the returned <code>id</code> and call <code>GET /v1/crawl/{id}</code> in Swagger UI or curl.
+          </div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="font-weight:600;">Response</div>
+            <div id="status" class="muted"></div>
+          </div>
+          <pre id="out"><code>// click "Fill example" then "Send"</code></pre>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const tokenEl = document.getElementById("token");
+      const endpointEl = document.getElementById("endpoint");
+      const bodyEl = document.getElementById("body");
+      const outEl = document.getElementById("out");
+      const statusEl = document.getElementById("status");
+
+      const LS_KEY = "thordata_firecrawl_token";
+      tokenEl.value = localStorage.getItem(LS_KEY) || "";
+      tokenEl.addEventListener("input", () => localStorage.setItem(LS_KEY, tokenEl.value || ""));
+
+      function setExample() {
+        const ep = endpointEl.value;
+        let example = {};
+        if (ep === "/v1/scrape") {
+          example = { url: "https://www.thordata.com", formats: ["markdown"], scrapeOptions: { javascript: true } };
+        } else if (ep === "/v1/map") {
+          example = { url: "https://www.thordata.com" };
+        } else if (ep === "/v1/search") {
+          example = { query: "Thordata web data API", limit: 5, engine: "google" };
+        } else if (ep === "/v1/crawl") {
+          example = { url: "https://www.thordata.com", limit: 20, maxDepth: 2, includeSubdomains: false, scrapeOptions: { javascript: true, formats: ["markdown"] } };
+        }
+        bodyEl.value = JSON.stringify(example, null, 2);
+      }
+
+      async function send() {
+        const ep = endpointEl.value;
+        let payload;
+        try {
+          payload = JSON.parse(bodyEl.value || "{}");
+        } catch (e) {
+          outEl.textContent = "Invalid JSON body: " + e;
+          return;
+        }
+
+        statusEl.textContent = "Sending...";
+        const headers = { "Content-Type": "application/json" };
+        const t = (tokenEl.value || "").trim();
+        if (t) headers["Authorization"] = t.startsWith("Bearer ") ? t : ("Bearer " + t);
+
+        try {
+          const resp = await fetch(ep, { method: "POST", headers, body: JSON.stringify(payload) });
+          const text = await resp.text();
+          statusEl.innerHTML = resp.ok
+            ? ('<span class="ok">' + resp.status + ' ' + resp.statusText + '</span>')
+            : ('<span class="bad">' + resp.status + ' ' + resp.statusText + '</span>');
+          try {
+            outEl.textContent = JSON.stringify(JSON.parse(text), null, 2);
+          } catch {
+            outEl.textContent = text;
+          }
+        } catch (e) {
+          statusEl.innerHTML = '<span class="bad">Request failed</span>';
+          outEl.textContent = String(e);
+        }
+      }
+
+      document.getElementById("fill").addEventListener("click", setExample);
+      document.getElementById("send").addEventListener("click", send);
+      document.getElementById("clear").addEventListener("click", () => { bodyEl.value = ""; outEl.textContent = ""; statusEl.textContent = ""; });
+
+      // Fill initial example
+      setExample();
+    </script>
+  </body>
+</html>
+""".strip()
+
+
 # API Endpoints
 @app.post("/v1/scrape", response_model=ScrapeResponse)
 async def scrape_endpoint(request: ScrapeRequest, client: ThordataCrawl = Depends(get_client)):
@@ -223,7 +413,11 @@ async def scrape_endpoint(request: ScrapeRequest, client: ThordataCrawl = Depend
                 options["javascript"] = bool(options.get("javascript"))
 
         result = client.scrape(url=request.url, formats=request.formats, **options)
-        return ScrapeResponse(success=True, data=result.get("data"))
+        return ScrapeResponse(
+            success=bool(result.get("success")),
+            data=result.get("data"),
+            error=result.get("error"),
+        )
     except Exception as e:
         return ScrapeResponse(success=False, error=str(e))
 
@@ -358,6 +552,7 @@ async def map_endpoint(request: MapRequest, client: ThordataCrawl = Depends(get_
         result = client.map(url=request.url, search=request.search)
         return MapResponse(success=True, links=result.get("links", []))
     except Exception as e:
+        # Keep response shape stable; surface error in a minimal way via empty links.
         return MapResponse(success=False, links=[])
 
 

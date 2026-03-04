@@ -95,6 +95,11 @@ docker-compose up -d
 pip install -e ".[server]"
 python run_server.py
 
+# Easiest way to try (no need to learn Swagger first)
+# - Home page:      http://127.0.0.1:3002/
+# - Playground:     http://127.0.0.1:3002/playground
+# - Swagger UI:     http://127.0.0.1:3002/docs
+
 # OpenAPI spec (for SDK generation / client integration)
 python export_openapi.py  # writes openapi.json in repo root
 ```
@@ -104,7 +109,7 @@ Scrape a single page:
 ```bash
 # Scrape a single page
 curl -X POST "http://localhost:3002/v1/scrape" \
-  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Authorization: Bearer YOUR_SCRAPER_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "url": "https://www.thordata.com",

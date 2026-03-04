@@ -49,6 +49,27 @@ python run_server.py
 uvicorn thordata_firecrawl.api:app --host 0.0.0.0 --port 3002
 ```
 
+## "I opened /docs but don't know what to do" (Beginner Guide)
+
+Open:
+
+- `http://127.0.0.1:3002/` (home page)
+- `http://127.0.0.1:3002/playground` (the easiest way to try endpoints)
+- `http://127.0.0.1:3002/docs` (Swagger UI)
+
+### Recommended: use `/playground`
+
+1. Paste your token into the **Authorization** box.
+   - If you have `THORDATA_SCRAPER_TOKEN`, use it (Universal API requires scraper_token for clean markdown/html/screenshots).
+2. Click **Fill example** then **Send**.
+3. Read the JSON response on the right.
+
+### Using Swagger UI (`/docs`)
+
+1. Click the green **Authorize** button (top-right).
+2. Paste `Bearer <YOUR_TOKEN>` and click **Authorize**.
+3. Expand an endpoint (e.g. `POST /v1/scrape`) → **Try it out** → fill JSON body → **Execute**.
+
 ## API Endpoints
 
 Once running, the API provides:
