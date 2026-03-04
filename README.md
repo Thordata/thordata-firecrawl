@@ -230,6 +230,54 @@ thordata-firecrawl agent "Extract company founders" \
 
 > This section documents the target API surface. A canonical spec will be added later in `openapi.yaml`.
 
+### Firecrawl → Thordata Firecrawl compatibility (migration guide)
+
+| Capability | Firecrawl hosted API (conceptual) | Thordata Firecrawl HTTP API | Notes |
+|-----------|------------------------------------|------------------------------|-------|
+| Single page scrape | `POST /v1/scrape` | `POST /v1/scrape` | Request/response shape is intentionally very similar. |
+| Site crawl (async) | `POST /v1/crawl` + `GET /v1/crawl/:id` | `POST /v1/crawl` + `GET /v1/crawl/{id}` | Async job model with polling, pagination and cancel. |
+| Map / URL discovery | `POST /v1/map` | `POST /v1/map` | Discovers URLs from a seed page. |
+| Search | `POST /v1/search` | `POST /v1/search` | Backed by Thordata SERP API; returns `data.web[]`. |
+| Agent / Extract | `POST /v1/agent` | `POST /v1/agent` | Uses OpenAI-compatible LLM with optional JSON schema. |
+
+**Key request fields**
+
+| Field (Firecrawl) | Field (Thordata Firecrawl) | Status |
+|-------------------|----------------------------|--------|
+| `url` | `url` | ✅ Same semantics. |
+| `formats` | `formats` | ✅ Same; supports `markdown`, `html`, `screenshot`. |
+| `scrapeOptions.waitFor` | `scrapeOptions.waitFor` → mapped to `wait` (ms) internally | ✅ Supported, converted in server/client. |
+| `scrapeOptions.javascript` | `scrapeOptions.javascript` | ✅ Supported (`True` enables JS rendering). |
+| `scrapeOptions.timeout` | `scrapeOptions.timeout` | ✅ Passed through to underlying Thordata SDK where applicable. |
+| `includeSubdomains` | `includeSubdomains` | ✅ Same for crawl/map. |
+| `maxDepth` | `maxDepth` | ✅ Same for crawl. |
+| `metadata` | `metadata` | ✅ Accepted and echoed in results where available. |
+
+**Authentication**
+
+- Firecrawl: `Authorization: Bearer fc-...` (Firecrawl API key).  
+- Thordata Firecrawl: `Authorization: Bearer <token>` where:
+  - For **Universal API scrape** (markdown/html/screenshot) you should prefer **`THORDATA_SCRAPER_TOKEN`** (scraper_token).
+  - `THORDATA_API_KEY` may work for some operations, but for Firecrawl-like behavior use `THORDATA_SCRAPER_TOKEN`.
+
+Practical mapping:
+
+- Firecrawl:
+  ```bash
+  curl -X POST "https://api.firecrawl.dev/v1/scrape" \
+    -H "Authorization: Bearer fc-XXX" \
+    -H "Content-Type: application/json" \
+    -d '{ "url": "https://example.com", "formats": ["markdown"] }'
+  ```
+
+- Thordata Firecrawl (self-hosted):
+  ```bash
+  curl -X POST "http://localhost:3002/v1/scrape" \
+    -H "Authorization: Bearer YOUR_SCRAPER_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{ "url": "https://example.com", "formats": ["markdown"] }'
+  ```
+
 ### `/v1/scrape` – Single‑page scrape
 
 - **Purpose**: Scrape a single URL and return content in requested formats.
