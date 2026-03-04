@@ -96,6 +96,33 @@ Key environment variables:
 - `PORT` (optional) - Server port (default: 3002)
 - `HOST` (optional) - Server host (default: 0.0.0.0)
 
+### Agent / LLM examples (OpenAI-compatible)
+
+Put these into your `.env` (recommended):
+
+**OpenAI**
+```bash
+OPENAI_API_BASE=https://api.openai.com/v1
+OPENAI_API_KEY=YOUR_OPENAI_KEY
+OPENAI_MODEL=gpt-4o-mini
+```
+
+**SiliconFlow**
+```bash
+OPENAI_API_BASE=https://api.siliconflow.cn/v1
+OPENAI_API_KEY=YOUR_SILICONFLOW_KEY
+OPENAI_MODEL=Qwen/Qwen2.5-7B-Instruct
+```
+
+**DeepSeek**
+```bash
+OPENAI_API_BASE=https://api.deepseek.com/v1
+OPENAI_API_KEY=YOUR_DEEPSEEK_KEY
+OPENAI_MODEL=deepseek-chat
+```
+
+Tip: don't mix keys across providers (a key must match its base URL).
+
 ## Production Deployment
 
 For production, consider:
@@ -130,8 +157,18 @@ WantedBy=multi-user.target
 ### Port already in use
 Change the port:
 ```bash
-PORT=3003 python run_server.py
+python run_server.py --port 3003
 ```
+
+Notes (Windows shells):
+- PowerShell: `python run_server.py --port 3003` (recommended)
+- cmd.exe: `python run_server.py --port 3003` (recommended)
+- Git Bash: `python run_server.py --port 3003` (recommended)
+
+If you still prefer environment variables:
+- Bash: `PORT=3003 python run_server.py`
+- PowerShell: `$env:PORT=3003; python run_server.py`
+- cmd.exe: `set PORT=3003 && python run_server.py`
 
 ### API key not working
 Verify your API key is correct and has sufficient credits.

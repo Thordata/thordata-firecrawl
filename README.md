@@ -88,7 +88,9 @@ docker-compose up -d
 
 # Or locally
 pip install -e ".[server]"
-python run_server.py
+python run_server.py --port 3002
+# Or change port:
+#   python run_server.py --port 3003
 
 # Easiest way to try (no need to learn Swagger first)
 # - Home page:      http://127.0.0.1:3002/
@@ -96,7 +98,7 @@ python run_server.py
 # - Swagger UI:     http://127.0.0.1:3002/docs
 
 # OpenAPI spec (for SDK generation / client integration)
-python export_openapi.py  # writes openapi.json in repo root
+python export_openapi.py  # writes openapi.json + openapi.yaml in repo root
 ```
 
 Scrape a single page:
@@ -451,6 +453,25 @@ Practical mapping:
 ```
 
 ### `/v1/agent` – Structured extraction (advanced)
+
+- **LLM config** (recommended `.env`):
+
+```bash
+# OpenAI
+OPENAI_API_BASE=https://api.openai.com/v1
+OPENAI_API_KEY=YOUR_OPENAI_KEY
+OPENAI_MODEL=gpt-4o-mini
+
+# SiliconFlow (example)
+# OPENAI_API_BASE=https://api.siliconflow.cn/v1
+# OPENAI_API_KEY=YOUR_SILICONFLOW_KEY
+# OPENAI_MODEL=Qwen/Qwen2.5-7B-Instruct
+
+# DeepSeek (example)
+# OPENAI_API_BASE=https://api.deepseek.com/v1
+# OPENAI_API_KEY=YOUR_DEEPSEEK_KEY
+# OPENAI_MODEL=deepseek-chat
+```
 
 - **Purpose**: Use LLM + JSON schema to extract structured data from web content.
 - **Features**:

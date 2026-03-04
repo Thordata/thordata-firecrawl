@@ -305,7 +305,7 @@ def search_and_scrape(
     type=click.Path(exists=True, path_type=Path),
     help="Path to JSON schema file for structured output.",
 )
-@click.option("--model", type=str, default=None, help="LLM model identifier (not used in MVP).")
+@click.option("--model", type=str, default=None, help="LLM model identifier (optional). Overrides OPENAI_MODEL.")
 @click.option(
     "--out",
     type=click.Path(dir_okay=False, path_type=Path),
@@ -323,8 +323,7 @@ def agent(
     """
     Run an agent task to extract structured data from web content.
 
-    Scrapes the provided URLs and uses LLM to extract data based on the prompt.
-    Note: Full LLM integration is planned for future versions.
+    Scrapes the provided URLs and uses an OpenAI-compatible LLM to extract data based on the prompt (optional JSON schema).
     """
     schema_dict = None
     if schema:
