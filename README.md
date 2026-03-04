@@ -122,6 +122,14 @@ curl -X POST "http://localhost:3002/v1/crawl" \
 curl -X GET "http://localhost:3002/v1/crawl/JOB_ID" \
   -H "Authorization: Bearer YOUR_API_KEY"
 
+# Poll with pagination (avoid huge responses)
+curl -X GET "http://localhost:3002/v1/crawl/JOB_ID?offset=0&limit=50" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+
+# Cancel a running crawl job (best-effort)
+curl -X POST "http://localhost:3002/v1/crawl/JOB_ID/cancel" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+
 # Map (discover links)
 curl -X POST "http://localhost:3002/v1/map" \
   -H "Authorization: Bearer YOUR_API_KEY" \

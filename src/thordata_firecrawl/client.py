@@ -50,9 +50,15 @@ class ThordataCrawl:
         formats = formats or ["markdown"]
         result: Dict[str, Any] = {"success": True, "data": {}, "url": url}
 
-        # Basic options mapping
+        # Options mapping (Firecrawl-ish -> Thordata SDK)
         js_render = bool(options.get("javascript", True))
         wait = options.get("wait") or options.get("waitFor")
+        wait_for = options.get("wait_for") or options.get("waitForSelector") or options.get("waitFor")
+        country = options.get("country")
+        block_resources = options.get("block_resources") or options.get("blockResources")
+        clean_content = options.get("clean_content") or options.get("cleanContent")
+        follow_redirect = options.get("follow_redirect") or options.get("followRedirect")
+        max_chars = options.get("max_chars") or options.get("maxChars") or 20000
 
         if "markdown" in formats:
             # Prefer SDK's universal_scrape_markdown (fast path), but fall back to
@@ -62,6 +68,10 @@ class ThordataCrawl:
                     url=url,
                     js_render=js_render,
                     wait=wait,
+                    wait_for=wait_for,
+                    country=country,
+                    block_resources=block_resources,
+                    max_chars=int(max_chars) if max_chars else 20000,
                 )
                 result["data"]["markdown"] = markdown
             except Exception as e:
@@ -74,6 +84,11 @@ class ThordataCrawl:
                         js_render=js_render,
                         output_format="html",
                         wait=wait,
+                        wait_for=wait_for,
+                        country=country,
+                        block_resources=block_resources,
+                        clean_content=clean_content,
+                        follow_redirect=follow_redirect,
                     )
                     html_str = html if isinstance(html, str) else str(html)
                     h = html2text.HTML2Text()
@@ -100,6 +115,11 @@ class ThordataCrawl:
                     js_render=js_render,
                     output_format=["html", "png"],
                     wait=wait,
+                    wait_for=wait_for,
+                    country=country,
+                    block_resources=block_resources,
+                    clean_content=clean_content,
+                    follow_redirect=follow_redirect,
                 )
                 if isinstance(combo, dict):
                     html_value = combo.get("html") if isinstance(combo.get("html"), str) else None
@@ -112,6 +132,11 @@ class ThordataCrawl:
                     js_render=js_render,
                     output_format="html",
                     wait=wait,
+                    wait_for=wait_for,
+                    country=country,
+                    block_resources=block_resources,
+                    clean_content=clean_content,
+                    follow_redirect=follow_redirect,
                 )
                 html_value = html if isinstance(html, str) else str(html)
             else:  # need_screenshot only
@@ -120,6 +145,11 @@ class ThordataCrawl:
                     js_render=js_render,
                     output_format="png",
                     wait=wait,
+                    wait_for=wait_for,
+                    country=country,
+                    block_resources=block_resources,
+                    clean_content=clean_content,
+                    follow_redirect=follow_redirect,
                 )
                 if isinstance(png_raw, (bytes, bytearray)):
                     png_bytes = bytes(png_raw)
