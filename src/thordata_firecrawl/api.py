@@ -16,9 +16,11 @@ import hmac
 import urllib.request
 import urllib.error
 import logging
+from collections import defaultdict, deque
 from typing import Any, Dict, List, Optional
+from datetime import datetime, timedelta
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Header, Depends, Query
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Header, Depends, Query, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
@@ -218,6 +220,146 @@ class AgentResponse(BaseModel):
     data: Dict[str, Any]
     sources: List[str]
     error: Optional[str] = None
+
+
+# Rate Limiting
+class RateLimiter:
+    """Simple in-memory rate limiter using sliding window algorithm."""
+    
+    def __init__(self):
+        # Store request timestamps per key (token or IP)
+        self._requests: Dict[str, deque] = defaultdict(lambda: deque())
+        self._lock = asyncio.Lock()
+    
+    async def check_rate_limit(
+        self, 
+        key: str, 
+        max_requests: int, 
+        window_seconds: int
+    ) -> tuple[bool, Optional[int]]:
+        """
+        Check if request is allowed.
+        
+        Returns:
+            (allowed, retry_after_seconds)
+        """
+        async with self._lock:
+            now = time.time()
+            window_start = now - window_seconds
+            
+            # Clean old requests outside the window
+            requests = self._requests[key]
+            while requests and requests[0] < window_start:
+                requests.popleft()
+            
+            # Check if limit exceeded
+            if len(requests) >= max_requests:
+                # Calculate retry after (time until oldest request expires)
+                if requests:
+                    retry_after = int(requests[0] + window_seconds - now) + 1
+                    return False, max(1, retry_after)
+                return False, window_seconds
+            
+            # Add current request
+            requests.append(now)
+            return True, None
+    
+    async def reset(self, key: str) -> None:
+        """Reset rate limit for a key (for testing/admin purposes)."""
+        async with self._lock:
+            self._requests.pop(key, None)
+
+
+# Global rate limiter instance
+_rate_limiter = RateLimiter()
+
+
+def _get_rate_limit_config() -> Dict[str, int]:
+    """Get rate limit configuration from environment variables."""
+    # Per-token limits (requests per minute)
+    token_rpm = int(os.getenv("RATE_LIMIT_TOKEN_RPM", "60"))
+    # Per-IP limits (requests per minute)
+    ip_rpm = int(os.getenv("RATE_LIMIT_IP_RPM", "120"))
+    # Window size in seconds (default: 60 seconds = 1 minute)
+    window_seconds = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
+    
+    return {
+        "token_rpm": token_rpm,
+        "ip_rpm": ip_rpm,
+        "window_seconds": window_seconds,
+    }
+
+
+def _get_max_response_size() -> int:
+    """Get maximum response size in bytes from environment variable."""
+    # Default: 10MB (10 * 1024 * 1024)
+    default_size = 10 * 1024 * 1024
+    try:
+        return int(os.getenv("MAX_RESPONSE_SIZE", str(default_size)))
+    except Exception:
+        return default_size
+
+
+def _check_response_size(response_data: Any, max_size: int) -> tuple[bool, Optional[str]]:
+    """
+    Check if response data exceeds size limit.
+    
+    Returns:
+        (within_limit, error_message)
+    """
+    try:
+        # Serialize to JSON to estimate size
+        json_str = json.dumps(response_data, ensure_ascii=False)
+        size_bytes = len(json_str.encode("utf-8"))
+        
+        if size_bytes > max_size:
+            size_mb = size_bytes / (1024 * 1024)
+            max_mb = max_size / (1024 * 1024)
+            return False, f"Response size ({size_mb:.2f}MB) exceeds limit ({max_mb:.2f}MB). Consider using pagination or reducing data."
+        return True, None
+    except Exception as e:
+        # If serialization fails, log but don't block
+        logger.warning(f"Failed to check response size: {str(e)}")
+        return True, None
+
+
+async def check_rate_limit(request: Request, api_key: Optional[str] = None) -> None:
+    """Dependency to check rate limits (per-token and per-IP)."""
+    config = _get_rate_limit_config()
+    
+    # Get client IP
+    client_ip = request.client.host if request.client else "unknown"
+    
+    # Check per-IP limit
+    allowed, retry_after = await _rate_limiter.check_rate_limit(
+        key=f"ip:{client_ip}",
+        max_requests=config["ip_rpm"],
+        window_seconds=config["window_seconds"],
+    )
+    if not allowed:
+        logger.warning(f"Rate limit exceeded: IP={client_ip}, retry_after={retry_after}s")
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded. Please retry after {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
+    
+    # Check per-token limit (if API key provided)
+    if api_key:
+        # Use hash of API key for privacy
+        token_hash = hashlib.sha256(api_key.encode()).hexdigest()[:16]
+        allowed, retry_after = await _rate_limiter.check_rate_limit(
+            key=f"token:{token_hash}",
+            max_requests=config["token_rpm"],
+            window_seconds=config["window_seconds"],
+        )
+        if not allowed:
+            logger.warning(f"Rate limit exceeded: token_hash={token_hash}, retry_after={retry_after}s")
+            raise HTTPException(
+                status_code=429,
+                detail=f"Rate limit exceeded. Please retry after {retry_after} seconds.",
+                headers={"Retry-After": str(retry_after)},
+            )
 
 
 # FastAPI app
@@ -488,8 +630,14 @@ async def playground() -> str:
 
 # API Endpoints
 @app.post("/v1/scrape", response_model=ScrapeResponse)
-async def scrape_endpoint(request: ScrapeRequest, client: ThordataCrawl = Depends(get_client)):
+async def scrape_endpoint(
+    request: ScrapeRequest, 
+    http_request: Request,
+    client: ThordataCrawl = Depends(get_client),
+    api_key: str = Depends(get_api_key),
+):
     """Scrape a single URL."""
+    await check_rate_limit(http_request, api_key)
     logger.info(f"Scrape request: url={request.url}, formats={request.formats}")
     try:
         options: Dict[str, Any] = {}
@@ -512,6 +660,18 @@ async def scrape_endpoint(request: ScrapeRequest, client: ThordataCrawl = Depend
             data=result.get("data"),
             error=result.get("error"),
         )
+        
+        # Check response size limit
+        if response.success and response.data:
+            max_size = _get_max_response_size()
+            within_limit, size_error = _check_response_size(response.dict(), max_size)
+            if not within_limit:
+                logger.warning(f"Response size limit exceeded: url={request.url}, error={size_error}")
+                return ScrapeResponse(
+                    success=False,
+                    error=size_error or "Response size exceeds limit",
+                )
+        
         if response.success:
             logger.info(f"Scrape success: url={request.url}")
         else:
@@ -525,11 +685,14 @@ async def scrape_endpoint(request: ScrapeRequest, client: ThordataCrawl = Depend
 @app.post("/v1/batch-scrape", response_model=BatchScrapeResponse)
 async def batch_scrape_endpoint(
     request: BatchScrapeRequest,
+    http_request: Request,
     client: ThordataCrawl = Depends(get_client),
+    api_key: str = Depends(get_api_key),
 ):
     """
     Batch scrape multiple URLs (Firecrawl-style batch endpoint).
     """
+    await check_rate_limit(http_request, api_key)
     try:
         options: Dict[str, Any] = {}
         if request.scrapeOptions:
@@ -547,12 +710,27 @@ async def batch_scrape_endpoint(
             formats=request.formats,
             **options,
         )
-        return BatchScrapeResponse(
+        response = BatchScrapeResponse(
             success=bool(result.get("success")),
             results=result.get("results", []),
             error=result.get("error"),
         )
+        
+        # Check response size limit
+        if response.success:
+            max_size = _get_max_response_size()
+            within_limit, size_error = _check_response_size(response.dict(), max_size)
+            if not within_limit:
+                logger.warning(f"Response size limit exceeded: batch-scrape, error={size_error}")
+                return BatchScrapeResponse(
+                    success=False,
+                    results=[],
+                    error=size_error or "Response size exceeds limit",
+                )
+        
+        return response
     except Exception as e:
+        logger.error(f"Batch scrape exception: {str(e)}", exc_info=True)
         return BatchScrapeResponse(success=False, results=[], error=str(e))
 
 
@@ -710,11 +888,13 @@ async def _run_crawl_job(job_id: str, api_key: str) -> None:
 @app.post("/v1/crawl", response_model=CrawlJobResponse)
 async def crawl_submit(
     request: CrawlRequest,
+    http_request: Request,
     background_tasks: BackgroundTasks,
     api_key: str = Depends(get_api_key),
     clientJobId: Optional[str] = Query(None, alias="clientJobId", description="Optional client-provided job ID for idempotency"),
 ):
     """Submit an async crawl job. Use GET /v1/crawl/{id} to poll status/results."""
+    await check_rate_limit(http_request, api_key)
     await _cleanup_expired_jobs()
 
     running = await _running_jobs_count()
@@ -786,8 +966,14 @@ async def crawl_cancel(job_id: str):
 
 
 @app.post("/v1/map", response_model=MapResponse)
-async def map_endpoint(request: MapRequest, client: ThordataCrawl = Depends(get_client)):
+async def map_endpoint(
+    request: MapRequest, 
+    http_request: Request,
+    client: ThordataCrawl = Depends(get_client),
+    api_key: str = Depends(get_api_key),
+):
     """Discover URLs on a website."""
+    await check_rate_limit(http_request, api_key)
     try:
         result = client.map(url=request.url, search=request.search)
         return MapResponse(success=True, links=result.get("links", []))
@@ -797,8 +983,14 @@ async def map_endpoint(request: MapRequest, client: ThordataCrawl = Depends(get_
 
 
 @app.post("/v1/search", response_model=SearchResponse)
-async def search_endpoint(request: SearchRequest, client: ThordataCrawl = Depends(get_client)):
+async def search_endpoint(
+    request: SearchRequest, 
+    http_request: Request,
+    client: ThordataCrawl = Depends(get_client),
+    api_key: str = Depends(get_api_key),
+):
     """Search the web."""
+    await check_rate_limit(http_request, api_key)
     try:
         result = client.search(
             query=request.query,
@@ -815,11 +1007,14 @@ async def search_endpoint(request: SearchRequest, client: ThordataCrawl = Depend
 @app.post("/v1/search-and-scrape", response_model=SearchAndScrapeResponse)
 async def search_and_scrape_endpoint(
     request: SearchAndScrapeRequest,
+    http_request: Request,
     client: ThordataCrawl = Depends(get_client),
+    api_key: str = Depends(get_api_key),
 ):
     """
     Combined search + scrape helper: search the web, then scrape the top results.
     """
+    await check_rate_limit(http_request, api_key)
     try:
         options: Dict[str, Any] = {}
         if request.scrapeOptions:
@@ -837,12 +1032,27 @@ async def search_and_scrape_endpoint(
             scrape_formats=request.formats,
             **options,
         )
-        return SearchAndScrapeResponse(
+        response = SearchAndScrapeResponse(
             success=bool(result.get("success")),
             query=str(result.get("query") or request.query),
             results=result.get("results", []),
             error=result.get("error"),
         )
+        
+        # Check response size limit
+        if response.success:
+            max_size = _get_max_response_size()
+            within_limit, size_error = _check_response_size(response.dict(), max_size)
+            if not within_limit:
+                logger.warning(f"Response size limit exceeded: search-and-scrape, error={size_error}")
+                return SearchAndScrapeResponse(
+                    success=False,
+                    query=request.query,
+                    results=[],
+                    error=size_error or "Response size exceeds limit",
+                )
+        
+        return response
     except Exception as e:
         return SearchAndScrapeResponse(
             success=False,
@@ -852,8 +1062,14 @@ async def search_and_scrape_endpoint(
         )
 
 @app.post("/v1/agent", response_model=AgentResponse)
-async def agent_endpoint(request: AgentRequest, client: ThordataCrawl = Depends(get_client)):
+async def agent_endpoint(
+    request: AgentRequest, 
+    http_request: Request,
+    client: ThordataCrawl = Depends(get_client),
+    api_key: str = Depends(get_api_key),
+):
     """Run an agent task for structured extraction."""
+    await check_rate_limit(http_request, api_key)
     try:
         options: Dict[str, Any] = {}
         if request.scrapeOptions:

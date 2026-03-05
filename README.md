@@ -683,7 +683,10 @@ Planned core configuration:
 - **Optional**
   - `REDIS_URL` / `DATABASE_URL`: Storage for tasks and results.
   - `LOG_LEVEL`: Logging level, e.g. `INFO` / `DEBUG`.
-  - `MAX_RESPONSE_SIZE`: Max response size in bytes to prevent OOM.
+  - `MAX_RESPONSE_SIZE`: Max response size in bytes to prevent OOM (default: 10MB = 10485760).
+  - `RATE_LIMIT_TOKEN_RPM`: Requests per minute per API token (default: 60).
+  - `RATE_LIMIT_IP_RPM`: Requests per minute per IP address (default: 120).
+  - `RATE_LIMIT_WINDOW_SECONDS`: Rate limit window size in seconds (default: 60).
 
 ---
 
@@ -695,10 +698,8 @@ Current production-ready features:
 - **Idempotency**: ✅ Optional `clientJobId` query parameter for crawl jobs to avoid duplicates
 - **Observability**: ✅ Structured logging around key operations (scrape, crawl, webhook) - configure via `LOG_LEVEL` env var
 - **Webhook reliability**: ✅ Exponential backoff retries with configurable timeout and max attempts
-
-Planned enhancements:
-
-- **Rate limiting & quotas**: Per‑token / per‑IP concurrency and QPS controls
+- **Rate limiting**: ✅ Per-token and per-IP rate limiting with configurable limits (default: 60 req/min per token, 120 req/min per IP)
+- **Response size limits**: ✅ Maximum response size protection to prevent OOM (default: 10MB, configurable via `MAX_RESPONSE_SIZE`)
 
 ---
 
