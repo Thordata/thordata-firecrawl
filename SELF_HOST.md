@@ -97,13 +97,31 @@ Interactive API documentation is available at `/docs` (Swagger UI) and `/redoc` 
 
 Key environment variables:
 
+### Core Configuration
 - `THORDATA_API_KEY` (required) - Your Thordata API key
 - `THORDATA_BASE_URL` (optional) - Custom Thordata API base URL
+- `PORT` (optional) - Server port (default: 3002)
+- `HOST` (optional) - Server host (default: 0.0.0.0)
+
+### LLM Configuration (for agent functionality)
 - `OPENAI_API_KEY` (optional) - For agent functionality
 - `OPENAI_API_BASE` (optional) - LLM API base URL
 - `OPENAI_MODEL` (optional) - LLM model name
-- `PORT` (optional) - Server port (default: 3002)
-- `HOST` (optional) - Server host (default: 0.0.0.0)
+
+### Rate Limiting
+- `RATE_LIMIT_TOKEN_RPM` (optional) - Requests per minute per API token (default: 60)
+- `RATE_LIMIT_IP_RPM` (optional) - Requests per minute per IP address (default: 120)
+- `RATE_LIMIT_WINDOW_SECONDS` (optional) - Rate limit window size in seconds (default: 60)
+
+### Response Size Limits
+- `MAX_RESPONSE_SIZE` (optional) - Maximum response size in bytes to prevent OOM (default: 10485760 = 10MB)
+
+### Logging
+- `LOG_LEVEL` (optional) - Logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR` (default: `INFO`)
+
+### Crawl Job Controls
+- `MAX_CONCURRENT_CRAWLS` (optional) - Maximum concurrent crawl jobs (default: 2)
+- `JOB_TTL_SECONDS` (optional) - Job TTL in seconds (default: 3600)
 
 ### Agent / LLM examples (OpenAI-compatible)
 
@@ -138,9 +156,10 @@ For production, consider:
 
 1. **Reverse Proxy**: Use Nginx or Caddy in front of the API
 2. **Process Manager**: Use systemd, supervisor, or PM2
-3. **Monitoring**: Add health checks and logging
-4. **Rate Limiting**: Implement rate limiting at the reverse proxy level
+3. **Monitoring**: Add health checks and logging (configure `LOG_LEVEL` for detailed logs)
+4. **Rate Limiting**: Built-in rate limiting is enabled by default (configurable via `RATE_LIMIT_*` env vars). You can also add additional rate limiting at the reverse proxy level.
 5. **SSL/TLS**: Use Let's Encrypt for HTTPS
+6. **Response Size Limits**: Configure `MAX_RESPONSE_SIZE` to prevent OOM for large responses
 
 Example systemd service (`/etc/systemd/system/thordata-firecrawl.service`):
 

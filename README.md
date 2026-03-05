@@ -672,22 +672,36 @@ The service is expected to listen on `http://localhost:3002` by default (exact p
 
 ---
 
-## 🔧 Configuration & Environment Variables (Planned)
+## 🔧 Configuration & Environment Variables
 
-Planned core configuration:
+### Core Configuration
+- `THORDATA_API_KEY` (required): Thordata API key for scraping
+- `THORDATA_BASE_URL` (optional): Custom Thordata API base URL, defaults to official endpoint if omitted
+- `PORT` (optional): Server port (default: 3002)
+- `HOST` (optional): Server host (default: 0.0.0.0)
 
-- **Core**
-  - `THORDATA_API_KEY`: Required Thordata API key for scraping.
-  - `THORDATA_BASE_URL`: Optional base URL, defaults to official endpoint if omitted.
-  - `CRAWL_MAX_CONCURRENCY`: Maximum concurrent scrape operations.
-  - `CRAWL_DEFAULT_LIMIT`: Default maximum number of pages per crawl.
-- **Optional**
-  - `REDIS_URL` / `DATABASE_URL`: Storage for tasks and results.
-  - `LOG_LEVEL`: Logging level, e.g. `INFO` / `DEBUG`.
-  - `MAX_RESPONSE_SIZE`: Max response size in bytes to prevent OOM (default: 10MB = 10485760).
-  - `RATE_LIMIT_TOKEN_RPM`: Requests per minute per API token (default: 60).
-  - `RATE_LIMIT_IP_RPM`: Requests per minute per IP address (default: 120).
-  - `RATE_LIMIT_WINDOW_SECONDS`: Rate limit window size in seconds (default: 60).
+### Rate Limiting
+- `RATE_LIMIT_TOKEN_RPM` (optional): Requests per minute per API token (default: 60)
+- `RATE_LIMIT_IP_RPM` (optional): Requests per minute per IP address (default: 120)
+- `RATE_LIMIT_WINDOW_SECONDS` (optional): Rate limit window size in seconds (default: 60)
+
+### Response Size Limits
+- `MAX_RESPONSE_SIZE` (optional): Max response size in bytes to prevent OOM (default: 10MB = 10485760)
+
+### Logging
+- `LOG_LEVEL` (optional): Logging level - `DEBUG`, `INFO`, `WARNING`, `ERROR` (default: `INFO`)
+
+### Crawl Job Controls
+- `MAX_CONCURRENT_CRAWLS` (optional): Maximum concurrent crawl jobs (default: 2)
+- `JOB_TTL_SECONDS` (optional): Job TTL in seconds (default: 3600)
+
+### LLM Configuration (for agent functionality)
+- `OPENAI_API_KEY` (optional): OpenAI-compatible API key
+- `OPENAI_API_BASE` (optional): LLM API base URL (default: `https://api.openai.com/v1`)
+- `OPENAI_MODEL` (optional): Model name (default: `auto` - auto-detects based on API_BASE)
+
+### Planned Enhancements
+- `REDIS_URL` / `DATABASE_URL`: Storage for tasks and results (for horizontal scaling)
 
 ---
 
