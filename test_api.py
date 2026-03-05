@@ -211,6 +211,48 @@ def test_openapi_crawl_request_includes_webhook_and_filters():
     assert "excludePaths" in props
     assert "webhook" in props
     print("[OK] OpenAPI crawl request includes webhook/includePaths/excludePaths")
+
+
+def test_webhook_config_accepts_new_fields():
+    """Test that webhook config accepts timeout, maxRetries, includeData."""
+    from fastapi.testclient import TestClient
+    from thordata_firecrawl import api as api_module
+
+    async def _fake_run(job_id: str, api_key: str) -> None:
+        async with api_module._CRAWL_JOBS_LOCK:
+            job = api_module._CRAWL_JOBS.get(job_id)
+            if job is None:
+                return
+            job.status = "completed"
+            job.total = 1
+            job.completed = 1
+            job.data = [{"test": "data"}]
+
+    api_module._run_crawl_job = _fake_run  # type: ignore[attr-defined]
+
+    client = TestClient(app)
+
+    # Submit job with full webhook config
+    resp = client.post(
+        "/v1/crawl",
+        headers={"Authorization": "Bearer test-key"},
+        json={
+            "url": "https://example.com",
+            "limit": 1,
+            "webhook": {
+                "url": "https://example.com/webhook",
+                "headers": {"Authorization": "Bearer token"},
+                "secret": "test-secret",
+                "timeout": 15,
+                "maxRetries": 5,
+                "includeData": False
+            }
+        },
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["success"] is True
+    print("[OK] Webhook config accepts timeout/maxRetries/includeData")
 if __name__ == "__main__":
     print("Testing Thordata Firecrawl API...")
     try:
@@ -219,6 +261,7 @@ if __name__ == "__main__":
         test_openapi_contains_new_endpoints()
         test_openapi_agent_request_includes_scrapeoptions_and_formats()
         test_openapi_crawl_request_includes_webhook_and_filters()
+        test_webhook_config_accepts_new_fields()
         test_crawl_url_filtering_rules()
         test_crawl_async_job_flow()
         test_crawl_pagination_and_cancel()

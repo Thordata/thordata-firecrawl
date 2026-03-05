@@ -157,6 +157,41 @@ def batch_scrape(
     help="Output format(s) for each page, e.g. markdown, html, screenshot.",
 )
 @click.option(
+    "--webhook-url",
+    type=str,
+    default=None,
+    help="Webhook URL to POST crawl completion events to (HTTP API only, not used in CLI sync mode).",
+)
+@click.option(
+    "--webhook-header",
+    "webhook_headers",
+    multiple=True,
+    help="Webhook header in KEY=VALUE format (repeatable). Example: --webhook-header Authorization=Bearer TOKEN",
+)
+@click.option(
+    "--webhook-secret",
+    type=str,
+    default=None,
+    help="Webhook secret for HMAC-SHA256 signature verification (HTTP API only).",
+)
+@click.option(
+    "--webhook-timeout",
+    type=int,
+    default=10,
+    help="Webhook request timeout in seconds (HTTP API only, default: 10).",
+)
+@click.option(
+    "--webhook-max-retries",
+    type=int,
+    default=3,
+    help="Maximum webhook retry attempts (HTTP API only, default: 3).",
+)
+@click.option(
+    "--webhook-include-data/--webhook-no-data",
+    default=True,
+    help="Include full data array in webhook payload (HTTP API only, default: true). Use --webhook-no-data for large crawls.",
+)
+@click.option(
     "--out",
     type=click.Path(dir_okay=False, path_type=Path),
     help="Optional output file path. If omitted, print to stdout.",
@@ -172,12 +207,21 @@ def crawl(
     exclude_paths: tuple[str, ...],
     concurrency: int,
     formats: tuple[str, ...],
+    webhook_url: Optional[str],
+    webhook_headers: tuple[str, ...],
+    webhook_secret: Optional[str],
+    webhook_timeout: int,
+    webhook_max_retries: int,
+    webhook_include_data: bool,
     out: Optional[Path],
 ) -> None:
     """
     Crawl a website starting from the given URL.
 
     Discovers links from HTML and crawls multiple pages using BFS.
+
+    Note: Webhook options are primarily for HTTP API async jobs. CLI crawl is synchronous
+    and completes immediately, so webhooks are not triggered in CLI mode.
     """
     client = _require_client(ctx)
     result = client.crawl(

@@ -76,6 +76,10 @@ Open:
 - Crawl advanced options (on `POST /v1/crawl`):
   - `includePaths` / `excludePaths`: wildcard path filters (fnmatch), e.g. `/docs/*`
   - `webhook`: best-effort callback on `crawl.completed` / `crawl.failed`
+    - Supports exponential backoff retries (configurable `maxRetries`, default: 3)
+    - Configurable timeout (default: 10 seconds)
+    - Optional HMAC-SHA256 signature verification via `secret`
+    - Optional `includeData: false` to reduce payload size for large crawls
 
 Once running, the API provides:
 

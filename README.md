@@ -137,7 +137,11 @@ curl -X POST "http://localhost:3002/v1/crawl" \
     "excludePaths": ["/privacy*", "/terms*"],
     "webhook": {
       "url": "https://example.com/webhook",
-      "headers": {"Authorization": "Bearer YOUR_WEBHOOK_TOKEN"}
+      "headers": {"Authorization": "Bearer YOUR_WEBHOOK_TOKEN"},
+      "secret": "YOUR_WEBHOOK_SECRET",
+      "timeout": 10,
+      "maxRetries": 3,
+      "includeData": true
     },
     "scrapeOptions": {
       "formats": ["markdown"]
@@ -349,6 +353,8 @@ Practical mapping:
   - Domain/subdomain filtering
   - Depth and limit controls
   - Concurrent requests for better performance
+  - Webhook callbacks for job completion/failure
+  - URL path filtering (include/exclude patterns)
 - **Example request body**:
 
 ```json
@@ -359,8 +365,67 @@ Practical mapping:
     "formats": ["markdown"]
   },
   "includeSubdomains": false,
-  "maxDepth": 3
+  "maxDepth": 3,
+  "includePaths": ["/docs/*"],
+  "excludePaths": ["/privacy*", "/terms*"],
+  "webhook": {
+    "url": "https://example.com/webhook",
+    "headers": {"Authorization": "Bearer YOUR_WEBHOOK_TOKEN"},
+    "secret": "YOUR_WEBHOOK_SECRET",
+    "timeout": 10,
+    "maxRetries": 3,
+    "includeData": true
+  }
 }
+```
+
+- **Webhook Configuration**:
+  - `url` (required): Webhook endpoint URL
+  - `headers` (optional): Extra HTTP headers for webhook request
+  - `secret` (optional): Secret for HMAC-SHA256 signature verification
+  - `timeout` (optional): Request timeout in seconds (default: 10, max: 60)
+  - `maxRetries` (optional): Maximum retry attempts with exponential backoff (default: 3, max: 10)
+  - `includeData` (optional): Include full `data` array in payload (default: `true`). Set to `false` for large crawls to reduce payload size.
+
+- **Webhook Payload Format**:
+
+```json
+{
+  "event": "crawl.completed",
+  "id": "job-123",
+  "status": "completed",
+  "total": 50,
+  "completed": 50,
+  "failed": 0,
+  "data": [...],  // Only included if includeData: true
+  "dataCount": 50,  // Included if includeData: false
+  "error": null
+}
+```
+
+- **Webhook Signature Verification** (Python example):
+
+```python
+import hmac
+import hashlib
+import json
+
+def verify_webhook_signature(secret: str, body: bytes, signature: str) -> bool:
+    """Verify HMAC-SHA256 webhook signature."""
+    expected = hmac.new(
+        secret.encode("utf-8"),
+        body,
+        hashlib.sha256
+    ).hexdigest()
+    # Signature format: "sha256=<hex>"
+    received = signature.replace("sha256=", "")
+    return hmac.compare_digest(expected, received)
+
+# In your webhook handler:
+signature = request.headers.get("X-Thordata-Signature")
+body = request.body  # Raw bytes
+if not verify_webhook_signature("YOUR_WEBHOOK_SECRET", body, signature):
+    return {"error": "Invalid signature"}, 401
 ```
 
 - **Example response (job submission)**:

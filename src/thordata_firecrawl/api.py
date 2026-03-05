@@ -63,6 +63,9 @@ class WebhookConfig(BaseModel):
     url: str = Field(description="Webhook URL to POST crawl job events to")
     headers: Optional[Dict[str, str]] = Field(default=None, description="Optional extra headers for webhook request")
     secret: Optional[str] = Field(default=None, description="Optional secret for HMAC-SHA256 signature")
+    timeout: Optional[int] = Field(default=10, ge=1, le=60, description="Request timeout in seconds (default: 10)")
+    maxRetries: Optional[int] = Field(default=3, ge=0, le=10, alias="maxRetries", description="Maximum retry attempts (default: 3)")
+    includeData: Optional[bool] = Field(default=True, alias="includeData", description="Include full data array in payload (default: true). Set to false for large crawls to reduce webhook payload size.")
 
 
 class CrawlRequest(BaseModel):
@@ -402,7 +405,14 @@ async def playground() -> str:
             includeSubdomains: false,
             includePaths: ["/*"],
             excludePaths: ["/privacy*", "/terms*"],
-            webhook: { url: "https://example.com/webhook", headers: { "Authorization": "Bearer YOUR_WEBHOOK_TOKEN" } },
+            webhook: {
+              url: "https://example.com/webhook",
+              headers: { "Authorization": "Bearer YOUR_WEBHOOK_TOKEN" },
+              secret: "YOUR_WEBHOOK_SECRET",
+              timeout: 10,
+              maxRetries: 3,
+              includeData: true
+            },
             scrapeOptions: { javascript: true, formats: ["markdown"] }
           };
         } else if (ep === "/v1/agent") {
@@ -533,14 +543,14 @@ def _webhook_signature(secret: str, body: bytes) -> str:
     return f"sha256={sig}"
 
 
-def _post_webhook(url: str, body: bytes, headers: Dict[str, str]) -> None:
+def _post_webhook(url: str, body: bytes, headers: Dict[str, str], timeout: int = 10) -> None:
     req = urllib.request.Request(url, data=body, headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=10) as resp:
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
         resp.read()
 
 
 async def _deliver_webhook(webhook: WebhookConfig, payload: Dict[str, Any], event: str, job_id: str) -> None:
-    # Best-effort delivery with small retries. Never raise to job runner.
+    # Best-effort delivery with exponential backoff retries. Never raise to job runner.
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
     headers: Dict[str, str] = {}
@@ -554,12 +564,17 @@ async def _deliver_webhook(webhook: WebhookConfig, payload: Dict[str, Any], even
     if webhook.secret:
         headers["X-Thordata-Signature"] = _webhook_signature(webhook.secret, body)
 
+    timeout = webhook.timeout or 10
+    max_retries = webhook.maxRetries or 3
+    
     last_err: Optional[str] = None
-    for delay in (0.0, 0.5, 1.0):
-        if delay:
+    # Exponential backoff: 0s, 1s, 2s, 4s, ...
+    for attempt in range(max_retries + 1):
+        if attempt > 0:
+            delay = min(2 ** (attempt - 1), 30)  # Cap at 30 seconds
             await asyncio.sleep(delay)
         try:
-            await asyncio.to_thread(_post_webhook, webhook.url, body, headers)
+            await asyncio.to_thread(_post_webhook, webhook.url, body, headers, timeout)
             return
         except Exception as e:
             last_err = str(e)
@@ -623,16 +638,20 @@ async def _run_crawl_job(job_id: str, api_key: str) -> None:
 
         # Webhook (best-effort)
         if job.request.webhook:
-            payload = {
+            payload: Dict[str, Any] = {
                 "event": "crawl.completed",
                 "id": job_id,
                 "status": job.status,
                 "total": job.total,
                 "completed": job.completed,
                 "failed": job.failed,
-                "data": job.data,
                 "error": None,
             }
+            # Include data only if explicitly requested (avoid huge payloads for large crawls)
+            if job.request.webhook.includeData is not False:
+                payload["data"] = job.data
+            else:
+                payload["dataCount"] = len(job.data)
             await _deliver_webhook(job.request.webhook, payload, "crawl.completed", job_id)
 
     except Exception as e:
@@ -646,16 +665,20 @@ async def _run_crawl_job(job_id: str, api_key: str) -> None:
 
         # Webhook (best-effort)
         if job.request.webhook:
-            payload = {
+            payload: Dict[str, Any] = {
                 "event": "crawl.failed",
                 "id": job_id,
                 "status": job.status,
                 "total": job.total,
                 "completed": job.completed,
                 "failed": job.failed,
-                "data": job.data,
                 "error": job.error,
             }
+            # Include data only if explicitly requested (avoid huge payloads for large crawls)
+            if job.request.webhook.includeData is not False:
+                payload["data"] = job.data
+            else:
+                payload["dataCount"] = len(job.data)
             await _deliver_webhook(job.request.webhook, payload, "crawl.failed", job_id)
 
 
