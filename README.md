@@ -35,9 +35,10 @@ Thordata Crawl is a Firecrawl‑like Web Data API service built on top of Thorda
   - `_crawler.py`: Internal crawler utilities (BFS, link discovery)
   - `_llm.py`: LLM integration for agent functionality
 - `examples/`: Usage examples
-  - `basic_crawl.py`: Basic crawl examples
+  - `basic_crawl.py`: Basic crawl examples (including URL filtering)
   - `search_and_agent.py`: Search and agent examples
   - `agent_with_llm.py`: LLM-powered structured extraction examples
+  - `http_api_examples.py`: HTTP API usage examples (Python requests)
 
 ---
 

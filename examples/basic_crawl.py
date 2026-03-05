@@ -43,8 +43,21 @@ result = client.crawl(
 print(f"Status: {result['status']}")
 print(f"Total pages: {result['total']}")
 
-# Example 3: Map (discover links without full content)
-print("\n\nExample 3: Map (link discovery)")
+# Example 3: Crawl with URL filtering (includePaths/excludePaths)
+print("\n\nExample 3: Crawl with URL filtering")
+result = client.crawl(
+    url="https://example.com",
+    limit=20,
+    includePaths=["/docs/*", "/blog/*"],  # Only crawl docs and blog pages
+    excludePaths=["/privacy*", "/terms*"],  # Exclude privacy and terms pages
+    formats=["markdown"],
+)
+
+print(f"Status: {result['status']}")
+print(f"Total pages: {result['total']}")
+
+# Example 4: Map (discover links without full content)
+print("\n\nExample 4: Map (link discovery)")
 map_result = client.map(
     url="https://example.com",
     includeSubdomains=False,
