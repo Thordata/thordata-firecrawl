@@ -15,6 +15,7 @@ import hashlib
 import hmac
 import urllib.request
 import urllib.error
+import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Header, Depends, Query
@@ -22,6 +23,15 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from .client import ThordataCrawl
+
+# Configure structured logging
+_log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, _log_level, logging.INFO),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("thordata_firecrawl")
 
 try:
     from dotenv import load_dotenv
@@ -112,6 +122,7 @@ class _CrawlJob:
         self.failed: int = 0
         self.data: List[Dict[str, Any]] = []
         self.error: Optional[str] = None
+        self.client_job_id: Optional[str] = None  # For idempotency
 
     def to_status(self) -> CrawlStatusResponse:
         return CrawlStatusResponse(
@@ -479,6 +490,7 @@ async def playground() -> str:
 @app.post("/v1/scrape", response_model=ScrapeResponse)
 async def scrape_endpoint(request: ScrapeRequest, client: ThordataCrawl = Depends(get_client)):
     """Scrape a single URL."""
+    logger.info(f"Scrape request: url={request.url}, formats={request.formats}")
     try:
         options: Dict[str, Any] = {}
         if request.scrapeOptions:
@@ -495,12 +507,18 @@ async def scrape_endpoint(request: ScrapeRequest, client: ThordataCrawl = Depend
                 options["javascript"] = bool(options.get("javascript"))
 
         result = client.scrape(url=request.url, formats=request.formats, **options)
-        return ScrapeResponse(
+        response = ScrapeResponse(
             success=bool(result.get("success")),
             data=result.get("data"),
             error=result.get("error"),
         )
+        if response.success:
+            logger.info(f"Scrape success: url={request.url}")
+        else:
+            logger.warning(f"Scrape failed: url={request.url}, error={response.error}")
+        return response
     except Exception as e:
+        logger.error(f"Scrape exception: url={request.url}, error={str(e)}", exc_info=True)
         return ScrapeResponse(success=False, error=str(e))
 
 
@@ -551,6 +569,7 @@ def _post_webhook(url: str, body: bytes, headers: Dict[str, str], timeout: int =
 
 async def _deliver_webhook(webhook: WebhookConfig, payload: Dict[str, Any], event: str, job_id: str) -> None:
     # Best-effort delivery with exponential backoff retries. Never raise to job runner.
+    logger.debug(f"Delivering webhook: job_id={job_id}, event={event}, url={webhook.url}")
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
     headers: Dict[str, str] = {}
@@ -575,13 +594,15 @@ async def _deliver_webhook(webhook: WebhookConfig, payload: Dict[str, Any], even
             await asyncio.sleep(delay)
         try:
             await asyncio.to_thread(_post_webhook, webhook.url, body, headers, timeout)
+            logger.info(f"Webhook delivered: job_id={job_id}, event={event}, url={webhook.url}, attempt={attempt+1}")
             return
         except Exception as e:
             last_err = str(e)
+            logger.warning(f"Webhook delivery failed: job_id={job_id}, event={event}, attempt={attempt+1}, error={str(e)}")
             continue
 
-    # Swallow errors (best-effort). Keeping this value for potential future logging.
-    _ = last_err
+    # Swallow errors (best-effort). Log final failure.
+    logger.error(f"Webhook delivery exhausted retries: job_id={job_id}, event={event}, url={webhook.url}, error={last_err}")
 
 
 async def _run_crawl_job(job_id: str, api_key: str) -> None:
@@ -592,9 +613,11 @@ async def _run_crawl_job(job_id: str, api_key: str) -> None:
     async with _CRAWL_JOBS_LOCK:
         job = _CRAWL_JOBS.get(job_id)
         if job is None:
+            logger.warning(f"Crawl job not found: job_id={job_id}")
             return
         job.status = "running"
         job.updated_at = time.time()
+    logger.info(f"Crawl job started: job_id={job_id}, url={job.request.url}")
 
     try:
         options: Dict[str, Any] = {}
@@ -635,6 +658,7 @@ async def _run_crawl_job(job_id: str, api_key: str) -> None:
             job.failed = int(result.get("failed", 0) or 0)
             job.data = list(result.get("data", []) or [])
             job.updated_at = time.time()
+        logger.info(f"Crawl job completed: job_id={job_id}, total={job.total}, completed={job.completed}, failed={job.failed}")
 
         # Webhook (best-effort)
         if job.request.webhook:
@@ -655,6 +679,7 @@ async def _run_crawl_job(job_id: str, api_key: str) -> None:
             await _deliver_webhook(job.request.webhook, payload, "crawl.completed", job_id)
 
     except Exception as e:
+        logger.error(f"Crawl job failed: job_id={job_id}, error={str(e)}", exc_info=True)
         async with _CRAWL_JOBS_LOCK:
             job = _CRAWL_JOBS.get(job_id)
             if job is None:
@@ -687,20 +712,33 @@ async def crawl_submit(
     request: CrawlRequest,
     background_tasks: BackgroundTasks,
     api_key: str = Depends(get_api_key),
+    clientJobId: Optional[str] = Query(None, alias="clientJobId", description="Optional client-provided job ID for idempotency"),
 ):
     """Submit an async crawl job. Use GET /v1/crawl/{id} to poll status/results."""
     await _cleanup_expired_jobs()
 
     running = await _running_jobs_count()
     if running >= _max_concurrent_crawls():
+        logger.warning(f"Crawl job rejected: too many concurrent jobs (max={_max_concurrent_crawls()})")
         raise HTTPException(status_code=429, detail="Too many concurrent crawl jobs")
+
+    # Idempotency: if clientJobId provided, check for existing job
+    if clientJobId:
+        async with _CRAWL_JOBS_LOCK:
+            for existing_id, existing_job in _CRAWL_JOBS.items():
+                if hasattr(existing_job, "client_job_id") and existing_job.client_job_id == clientJobId:
+                    logger.info(f"Crawl job idempotency: clientJobId={clientJobId} -> existing job_id={existing_id}")
+                    return CrawlJobResponse(success=True, id=existing_id, url=f"/v1/crawl/{existing_id}")
 
     job_id = uuid.uuid4().hex
     job = _CrawlJob(job_id, request)
+    if clientJobId:
+        job.client_job_id = clientJobId
 
     async with _CRAWL_JOBS_LOCK:
         _CRAWL_JOBS[job_id] = job
 
+    logger.info(f"Crawl job submitted: job_id={job_id}, url={request.url}, limit={request.limit}, clientJobId={clientJobId}")
     background_tasks.add_task(_run_crawl_job, job_id, api_key)
 
     return CrawlJobResponse(success=True, id=job_id, url=f"/v1/crawl/{job_id}")

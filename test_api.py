@@ -253,6 +253,49 @@ def test_webhook_config_accepts_new_fields():
     payload = resp.json()
     assert payload["success"] is True
     print("[OK] Webhook config accepts timeout/maxRetries/includeData")
+
+
+def test_crawl_idempotency():
+    """Test that clientJobId provides idempotency for crawl jobs."""
+    from fastapi.testclient import TestClient
+    from thordata_firecrawl import api as api_module
+
+    async def _fake_run(job_id: str, api_key: str) -> None:
+        async with api_module._CRAWL_JOBS_LOCK:
+            job = api_module._CRAWL_JOBS.get(job_id)
+            if job is None:
+                return
+            job.status = "completed"
+            job.total = 1
+            job.completed = 1
+            job.data = [{"test": "data"}]
+
+    api_module._run_crawl_job = _fake_run  # type: ignore[attr-defined]
+
+    client = TestClient(app)
+    client_job_id = "test-unique-id-123"
+
+    # First submission
+    resp1 = client.post(
+        "/v1/crawl",
+        headers={"Authorization": "Bearer test-key"},
+        params={"clientJobId": client_job_id},
+        json={"url": "https://example.com", "limit": 1},
+    )
+    assert resp1.status_code == 200
+    job_id_1 = resp1.json()["id"]
+
+    # Second submission with same clientJobId should return same job_id
+    resp2 = client.post(
+        "/v1/crawl",
+        headers={"Authorization": "Bearer test-key"},
+        params={"clientJobId": client_job_id},
+        json={"url": "https://example.com", "limit": 1},
+    )
+    assert resp2.status_code == 200
+    job_id_2 = resp2.json()["id"]
+    assert job_id_1 == job_id_2, "Idempotency should return same job_id"
+    print("[OK] Crawl idempotency works with clientJobId")
 if __name__ == "__main__":
     print("Testing Thordata Firecrawl API...")
     try:
@@ -262,6 +305,7 @@ if __name__ == "__main__":
         test_openapi_agent_request_includes_scrapeoptions_and_formats()
         test_openapi_crawl_request_includes_webhook_and_filters()
         test_webhook_config_accepts_new_fields()
+        test_crawl_idempotency()
         test_crawl_url_filtering_rules()
         test_crawl_async_job_flow()
         test_crawl_pagination_and_cancel()

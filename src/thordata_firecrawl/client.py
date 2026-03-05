@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import base64
+import time
+import logging
 from typing import Any, Dict, List, Optional
 
 from thordata.client import ThordataClient
 
 from ._crawler import crawl_bfs, discover_links
+
+logger = logging.getLogger("thordata_firecrawl.client")
 
 try:
     from ._llm import extract_structured_data
@@ -60,11 +64,16 @@ class ThordataCrawl:
         follow_redirect = options.get("follow_redirect") or options.get("followRedirect")
         max_chars = options.get("max_chars") or options.get("maxChars") or 20000
 
+        # Get retry configuration from options
+        max_retries = int(options.get("maxRetries", options.get("max_retries", 3)))
+        
         if "markdown" in formats:
             # Prefer SDK's universal_scrape_markdown (fast path), but fall back to
             # HTML -> Markdown conversion if the SDK environment is missing optional deps.
             try:
-                markdown = self._client.universal_scrape_markdown(
+                markdown = _retry_with_backoff(
+                    self._client.universal_scrape_markdown,
+                    max_retries=max_retries,
                     url=url,
                     js_render=js_render,
                     wait=wait,
@@ -79,7 +88,9 @@ class ThordataCrawl:
                 try:
                     import html2text
 
-                    html = self._client.universal_scrape(
+                    html = _retry_with_backoff(
+                        self._client.universal_scrape,
+                        max_retries=max_retries,
                         url=url,
                         js_render=js_render,
                         output_format="html",
@@ -110,7 +121,9 @@ class ThordataCrawl:
 
             if need_html and need_screenshot:
                 # Request both HTML and PNG in a single Universal Scrape call.
-                combo = self._client.universal_scrape(
+                combo = _retry_with_backoff(
+                    self._client.universal_scrape,
+                    max_retries=max_retries,
                     url=url,
                     js_render=js_render,
                     output_format=["html", "png"],
@@ -127,7 +140,9 @@ class ThordataCrawl:
                     if isinstance(png_raw, (bytes, bytearray)):
                         png_bytes = bytes(png_raw)
             elif need_html:
-                html = self._client.universal_scrape(
+                html = _retry_with_backoff(
+                    self._client.universal_scrape,
+                    max_retries=max_retries,
                     url=url,
                     js_render=js_render,
                     output_format="html",
@@ -140,7 +155,9 @@ class ThordataCrawl:
                 )
                 html_value = html if isinstance(html, str) else str(html)
             else:  # need_screenshot only
-                png_raw = self._client.universal_scrape(
+                png_raw = _retry_with_backoff(
+                    self._client.universal_scrape,
+                    max_retries=max_retries,
                     url=url,
                     js_render=js_render,
                     output_format="png",

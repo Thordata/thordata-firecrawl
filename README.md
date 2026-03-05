@@ -126,7 +126,7 @@ curl -X POST "http://localhost:3002/v1/batch-scrape" \
   }'
 
 # Crawl a website (async job)
-curl -X POST "http://localhost:3002/v1/crawl" \
+curl -X POST "http://localhost:3002/v1/crawl?clientJobId=my-unique-job-id" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -144,7 +144,8 @@ curl -X POST "http://localhost:3002/v1/crawl" \
       "includeData": true
     },
     "scrapeOptions": {
-      "formats": ["markdown"]
+      "formats": ["markdown"],
+      "maxRetries": 3
     }
   }'
 
@@ -379,6 +380,8 @@ Practical mapping:
 }
 ```
 
+- **Idempotency**: Use `?clientJobId=your-unique-id` query parameter to ensure idempotent job submission. If a job with the same `clientJobId` already exists, the existing job ID will be returned.
+
 - **Webhook Configuration**:
   - `url` (required): Webhook endpoint URL
   - `headers` (optional): Extra HTTP headers for webhook request
@@ -386,6 +389,8 @@ Practical mapping:
   - `timeout` (optional): Request timeout in seconds (default: 10, max: 60)
   - `maxRetries` (optional): Maximum retry attempts with exponential backoff (default: 3, max: 10)
   - `includeData` (optional): Include full `data` array in payload (default: `true`). Set to `false` for large crawls to reduce payload size.
+
+- **Retry Strategy**: Scrape operations automatically retry on network errors, 5xx responses, and timeouts with exponential backoff. Configure via `scrapeOptions.maxRetries` (default: 3).
 
 - **Webhook Payload Format**:
 
@@ -638,11 +643,12 @@ pip install -e ".[llm]"
 ```
 
 - Configure environment variables (or `.env` file):
-  - `THORDATA_API_KEY`: Thordata API key for scraping (required)
-  - `THORDATA_BASE_URL`: Optional Thordata API base URL
-  - `OPENAI_API_KEY`: OpenAI-compatible API key (required for `agent` functionality)
-  - `OPENAI_API_BASE`: API base URL (default: `https://api.openai.com/v1`)
-  - `OPENAI_MODEL`: Model name (default: `auto` - auto-detects based on API_BASE)
+- `THORDATA_API_KEY`: Thordata API key for scraping (required)
+- `THORDATA_BASE_URL`: Optional Thordata API base URL
+- `OPENAI_API_KEY`: OpenAI-compatible API key (required for `agent` functionality)
+- `OPENAI_API_BASE`: API base URL (default: `https://api.openai.com/v1`)
+- `OPENAI_MODEL`: Model name (default: `auto` - auto-detects based on API_BASE)
+- `LOG_LEVEL`: Logging level (default: `INFO`, options: `DEBUG`, `INFO`, `WARNING`, `ERROR`)
 
 ### Docker / docker-compose
 
@@ -681,14 +687,18 @@ Planned core configuration:
 
 ---
 
-## 🛡 Resilience & Performance (Planned)
+## 🛡 Resilience & Performance
 
-To ensure real‑world stability, the project will gradually introduce:
+Current production-ready features:
 
-- **Retry strategies**: Exponential backoff for 5xx / network errors / timeouts.
-- **Rate limiting & quotas**: Per‑token / per‑IP concurrency and QPS controls.
-- **Idempotency**: Optional `clientJobId` for crawl jobs to avoid duplicates.
-- **Observability**: Structured logging around key operations for debugging and monitoring.
+- **Retry strategies**: ✅ Exponential backoff for 5xx / network errors / timeouts (configurable via `scrapeOptions.maxRetries`)
+- **Idempotency**: ✅ Optional `clientJobId` query parameter for crawl jobs to avoid duplicates
+- **Observability**: ✅ Structured logging around key operations (scrape, crawl, webhook) - configure via `LOG_LEVEL` env var
+- **Webhook reliability**: ✅ Exponential backoff retries with configurable timeout and max attempts
+
+Planned enhancements:
+
+- **Rate limiting & quotas**: Per‑token / per‑IP concurrency and QPS controls
 
 ---
 
