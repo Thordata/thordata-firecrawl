@@ -16,13 +16,15 @@ import hmac
 import urllib.request
 import urllib.error
 import logging
+import re
 from collections import defaultdict, deque
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timedelta
+from urllib.parse import urlparse
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Header, Depends, Query, Request
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 
 from .client import ThordataCrawl
 
@@ -44,12 +46,59 @@ if load_dotenv is not None:
     load_dotenv()
 
 
+# Validation helpers
+def validate_url(url: str) -> str:
+    """Validate URL format."""
+    if not url or not isinstance(url, str):
+        raise ValueError("URL is required and must be a string")
+    
+    # Basic URL format check
+    parsed = urlparse(url)
+    if not parsed.scheme or not parsed.netloc:
+        raise ValueError(f"Invalid URL format: {url}")
+    
+    # Only allow http/https
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"URL scheme must be http or https, got: {parsed.scheme}")
+    
+    return url
+
+
+def validate_urls(urls: List[str]) -> List[str]:
+    """Validate a list of URLs."""
+    if not urls:
+        raise ValueError("At least one URL is required")
+    
+    if len(urls) > 100:  # Reasonable limit for batch operations
+        raise ValueError(f"Too many URLs (max 100), got {len(urls)}")
+    
+    validated = []
+    for url in urls:
+        validated.append(validate_url(url))
+    
+    return validated
+
+
 # Request/Response Models
 class ScrapeRequest(BaseModel):
     url: str
     formats: List[str] = Field(default=["markdown"], description="Output formats")
     scrapeOptions: Optional[Dict[str, Any]] = Field(default=None, alias="scrapeOptions")
     metadata: Optional[Dict[str, Any]] = None
+    
+    @validator("url")
+    def validate_url_field(cls, v):
+        return validate_url(v)
+    
+    @validator("formats")
+    def validate_formats(cls, v):
+        if not v:
+            raise ValueError("At least one format is required")
+        allowed = {"markdown", "html", "screenshot", "json"}
+        invalid = set(v) - allowed
+        if invalid:
+            raise ValueError(f"Invalid formats: {invalid}. Allowed: {allowed}")
+        return v
 
 
 class ScrapeResponse(BaseModel):
@@ -63,6 +112,20 @@ class BatchScrapeRequest(BaseModel):
     formats: List[str] = Field(default=["markdown"], description="Output formats")
     scrapeOptions: Optional[Dict[str, Any]] = Field(default=None, alias="scrapeOptions")
     metadata: Optional[Dict[str, Any]] = None
+    
+    @validator("urls")
+    def validate_urls_field(cls, v):
+        return validate_urls(v)
+    
+    @validator("formats")
+    def validate_formats(cls, v):
+        if not v:
+            raise ValueError("At least one format is required")
+        allowed = {"markdown", "html", "screenshot", "json"}
+        invalid = set(v) - allowed
+        if invalid:
+            raise ValueError(f"Invalid formats: {invalid}. Allowed: {allowed}")
+        return v
 
 
 class BatchScrapeResponse(BaseModel):
@@ -89,6 +152,10 @@ class CrawlRequest(BaseModel):
     includePaths: Optional[List[str]] = Field(default=None, alias="includePaths", description="Only crawl URLs whose path matches any of these wildcard patterns (fnmatch)")
     excludePaths: Optional[List[str]] = Field(default=None, alias="excludePaths", description="Do not crawl URLs whose path matches any of these wildcard patterns (fnmatch)")
     webhook: Optional[WebhookConfig] = Field(default=None, description="Optional webhook to receive crawl job completion/failure events")
+    
+    @validator("url")
+    def validate_url_field(cls, v):
+        return validate_url(v)
 
 
 class CrawlJobResponse(BaseModel):
@@ -171,6 +238,10 @@ async def _running_jobs_count() -> int:
 class MapRequest(BaseModel):
     url: str
     search: Optional[str] = None
+    
+    @validator("url")
+    def validate_url_field(cls, v):
+        return validate_url(v)
 
 
 class MapResponse(BaseModel):
@@ -213,6 +284,30 @@ class AgentRequest(BaseModel):
     searchLimit: int = Field(default=3, ge=1, le=10, alias="searchLimit")
     formats: List[str] = Field(default=["markdown"], description="Formats to scrape for context")
     scrapeOptions: Optional[Dict[str, Any]] = Field(default=None, alias="scrapeOptions")
+    
+    @validator("prompt")
+    def validate_prompt(cls, v):
+        if not v or not isinstance(v, str) or len(v.strip()) == 0:
+            raise ValueError("Prompt is required and cannot be empty")
+        if len(v) > 10000:  # Reasonable limit
+            raise ValueError(f"Prompt too long (max 10000 characters), got {len(v)}")
+        return v.strip()
+    
+    @validator("urls")
+    def validate_urls_field(cls, v):
+        if v is None:
+            return v
+        return validate_urls(v)
+    
+    @validator("formats")
+    def validate_formats(cls, v):
+        if not v:
+            raise ValueError("At least one format is required")
+        allowed = {"markdown", "html", "screenshot", "json"}
+        invalid = set(v) - allowed
+        if invalid:
+            raise ValueError(f"Invalid formats: {invalid}. Allowed: {allowed}")
+        return v
 
 
 class AgentResponse(BaseModel):
@@ -677,6 +772,10 @@ async def scrape_endpoint(
         else:
             logger.warning(f"Scrape failed: url={request.url}, error={response.error}")
         return response
+    except ValueError as e:
+        # Validation errors
+        logger.warning(f"Scrape validation error: url={request.url}, error={str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Scrape exception: url={request.url}, error={str(e)}", exc_info=True)
         return ScrapeResponse(success=False, error=str(e))
@@ -729,6 +828,10 @@ async def batch_scrape_endpoint(
                 )
         
         return response
+    except ValueError as e:
+        # Validation errors
+        logger.warning(f"Batch scrape validation error: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Batch scrape exception: {str(e)}", exc_info=True)
         return BatchScrapeResponse(success=False, results=[], error=str(e))
@@ -977,7 +1080,12 @@ async def map_endpoint(
     try:
         result = client.map(url=request.url, search=request.search)
         return MapResponse(success=True, links=result.get("links", []))
+    except ValueError as e:
+        # Validation errors
+        logger.warning(f"Map validation error: url={request.url}, error={str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        logger.error(f"Map exception: url={request.url}, error={str(e)}", exc_info=True)
         # Keep response shape stable; surface error in a minimal way via empty links.
         return MapResponse(success=False, links=[])
 
@@ -1000,7 +1108,12 @@ async def search_endpoint(
             language=request.language,
         )
         return SearchResponse(success=True, data=result.get("data", {}))
+    except ValueError as e:
+        # Validation errors
+        logger.warning(f"Search validation error: query={request.query}, error={str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        logger.error(f"Search exception: query={request.query}, error={str(e)}", exc_info=True)
         return SearchResponse(success=False, data={"error": str(e)})
 
 
@@ -1053,7 +1166,12 @@ async def search_and_scrape_endpoint(
                 )
         
         return response
+    except ValueError as e:
+        # Validation errors
+        logger.warning(f"Search-and-scrape validation error: query={request.query}, error={str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        logger.error(f"Search-and-scrape exception: query={request.query}, error={str(e)}", exc_info=True)
         return SearchAndScrapeResponse(
             success=False,
             query=request.query,
@@ -1099,7 +1217,12 @@ async def agent_endpoint(
                 sources=result.get("sources", []),
                 error=result.get("error", "Unknown error"),
             )
+    except ValueError as e:
+        # Validation errors
+        logger.warning(f"Agent validation error: prompt={request.prompt[:50]}..., error={str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        logger.error(f"Agent exception: prompt={request.prompt[:50]}..., error={str(e)}", exc_info=True)
         return AgentResponse(
             success=False,
             data={},
