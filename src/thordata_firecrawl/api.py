@@ -462,7 +462,7 @@ async def check_rate_limit(request: Request, api_key: Optional[str] = None) -> N
 app = FastAPI(
     title="Thordata Firecrawl API",
     description="Turn any website into AI-ready data with a single API",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 

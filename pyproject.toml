@@ -1,6 +1,6 @@
 [project]
 name = "thordata-firecrawl"
-version = "0.1.0"
+version = "0.2.0"
 description = "Thordata Crawl – Turn any website into AI-ready data with a single API."
 readme = "README.md"
 requires-python = ">=3.10"

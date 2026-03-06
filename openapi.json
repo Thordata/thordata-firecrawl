@@ -3,7 +3,7 @@
   "info": {
     "title": "Thordata Firecrawl API",
     "description": "Turn any website into AI-ready data with a single API",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "paths": {
     "/health": {
