@@ -26,9 +26,8 @@ Thordata Crawl is a Firecrawl‑like Web Data API service built on top of Thorda
 - `run_server.py`: Simple script to run the API server locally
 - `test_api.py`: Quick test script to verify API functionality
 - `.env.example`: Environment variable template
-- `openapi.json`: OpenAPI specification exported from FastAPI app
-- `DEPLOY_RENDER.md`: Deploy the HTTP API to Render (free PaaS) with HTTPS
-- `render.yaml`: Render Blueprint for one-click deploy
+- `openapi.json` / `openapi.yaml`: OpenAPI specification exported from FastAPI app
+- `render.yaml`: Render Blueprint for one-click cloud deployment
 - `src/thordata_firecrawl/`: Core Python package
   - `__init__.py`: Package exports
   - `client.py`: High-level Python client (`ThordataCrawl`)
@@ -608,19 +607,19 @@ OPENAI_MODEL=gpt-4o-mini
 
 ---
 
-## 🏗 Architecture (Planned)
+## 🏗 Architecture
 
 High‑level architecture:
 
 - **Entry points**
-  - HTTP API
-  - Python SDK
-  - CLI tool
+  - ✅ HTTP API (FastAPI)
+  - ✅ Python SDK (`ThordataCrawl`)
+  - ✅ CLI tool (`thordata-firecrawl`)
 - **Middle layer**
-  - Job management / queue (for async crawl)
-  - URL discovery / deduplication / rate limiting
-  - Content cleaning (HTML → Markdown / JSON)
-  - Structured extraction module (Agent / RAG)
+  - ✅ Job management / queue (in-memory, async crawl)
+  - ✅ URL discovery / deduplication / rate limiting
+  - ✅ Content cleaning (HTML → Markdown / JSON)
+  - ✅ Structured extraction module (Agent / LLM)
 - **Underlying Thordata infrastructure**
   - Proxy Network
   - Web Scraper API
@@ -628,15 +627,13 @@ High‑level architecture:
   - SERP API
   - RAG Pipeline
 
-This repository does **not** contain proxy network or anti‑bot core logic. It only calls official Thordata APIs/SDKs, allowing this project to use a permissive open‑source license (MIT, planned) without exposing commercial internals.
+This repository does **not** contain proxy network or anti‑bot core logic. It only calls official Thordata APIs/SDKs, allowing this project to use a permissive open‑source license (MIT) without exposing commercial internals.
 
 ---
 
-## ⚙️ Installation & Deployment (Planned)
+## ⚙️ Installation & Deployment
 
 ### Local development
-
-Planned local workflow:
 
 - Requires Python 3.10+.
 - After cloning the repo, install in editable mode:
@@ -645,23 +642,25 @@ Planned local workflow:
 pip install -e .
 ```
 
-
 - Install optional LLM dependencies (for `agent` functionality):
 ```bash
 pip install -e ".[llm]"
 ```
 
+- Install server dependencies:
+```bash
+pip install -e ".[server]"
+```
+
 - Configure environment variables (or `.env` file):
-- `THORDATA_API_KEY`: Thordata API key for scraping (required)
-- `THORDATA_BASE_URL`: Optional Thordata API base URL
-- `OPENAI_API_KEY`: OpenAI-compatible API key (required for `agent` functionality)
-- `OPENAI_API_BASE`: API base URL (default: `https://api.openai.com/v1`)
-- `OPENAI_MODEL`: Model name (default: `auto` - auto-detects based on API_BASE)
-- `LOG_LEVEL`: Logging level (default: `INFO`, options: `DEBUG`, `INFO`, `WARNING`, `ERROR`)
+  - `THORDATA_API_KEY`: Thordata API key for scraping (required)
+  - `THORDATA_BASE_URL`: Optional Thordata API base URL
+  - `OPENAI_API_KEY`: OpenAI-compatible API key (required for `agent` functionality)
+  - `OPENAI_API_BASE`: API base URL (default: `https://api.openai.com/v1`)
+  - `OPENAI_MODEL`: Model name (default: `auto` - auto-detects based on API_BASE)
+  - `LOG_LEVEL`: Logging level (default: `INFO`, options: `DEBUG`, `INFO`, `WARNING`, `ERROR`)
 
 ### Docker / docker-compose
-
-Planned deployment:
 
 - Build service image via `Dockerfile`.
 - Start via `docker-compose.yaml`:
@@ -670,13 +669,27 @@ Planned deployment:
 docker-compose up --build
 ```
 
-The service is expected to listen on `http://localhost:3002` by default (exact port TBD).
+The service listens on `http://localhost:3002` by default.
 
-### Production deployment (planned)
+### Cloud Deployment (Render)
 
-- Can be deployed to K8s / ECS / VMs.
-- Recommended to front the service with an API Gateway for auth, rate limiting, and auditing.
-- Task metadata and results can be stored in Redis / a database for better resilience and observability.
+Deploy to Render (free tier available) using the included `render.yaml`:
+
+1. Push this repo to GitHub
+2. In Render dashboard, choose **New** → **Blueprint**
+3. Select your GitHub repo
+4. Set environment variables:
+   - `THORDATA_API_KEY` (required)
+   - `CORS_ALLOW_ORIGINS` (recommended, e.g., `https://thordata.github.io`)
+5. Deploy and get your HTTPS URL
+
+See `SELF_HOST.md` for detailed deployment instructions.
+
+### Production deployment
+
+- Can be deployed to K8s / ECS / VMs / Render / Fly.io
+- Recommended to front the service with an API Gateway for auth, rate limiting, and auditing
+- Task metadata and results can be stored in Redis / a database for better resilience and observability (optional)
 
 ---
 
@@ -708,8 +721,8 @@ The service is expected to listen on `http://localhost:3002` by default (exact p
 - `OPENAI_API_BASE` (optional): LLM API base URL (default: `https://api.openai.com/v1`)
 - `OPENAI_MODEL` (optional): Model name (default: `auto` - auto-detects based on API_BASE)
 
-### Planned Enhancements
-- `REDIS_URL` / `DATABASE_URL`: Storage for tasks and results (for horizontal scaling)
+### Optional Enhancements
+- `REDIS_URL` / `DATABASE_URL`: Storage for tasks and results (for horizontal scaling) - not yet implemented
 
 ---
 
@@ -742,8 +755,8 @@ Current production-ready features:
 
 **Licensing model**
 
-- Firecrawl’s main repo is licensed under AGPL‑3.0.
-- Thordata Crawl is planned to use MIT (see `LICENSE` once added), making it easy to integrate into commercial projects.
+- Firecrawl's main repo is licensed under AGPL‑3.0.
+- Thordata Crawl uses MIT License (see `LICENSE`), making it easy to integrate into commercial projects.
 
 ---
 
@@ -761,21 +774,21 @@ Current production-ready features:
 
 ## 🗺 Roadmap
 
-- **v0.1 (MVP)**
-  - Implement Python client based on `thordata-sdk` with `scrape` (single‑page) and basic `crawl`/`map` stubs.
-  - Provide a CLI with `scrape` / `crawl` subcommands.
-  - Document configuration and local usage.
-- **v0.2**
-  - Implement HTTP service (FastAPI or similar) exposing `/v1/scrape` / `/v1/crawl` / `/v1/map`.
-  - Add Docker / docker‑compose support.
-  - Introduce simple job queue and status polling endpoints.
-- **v0.3**
-  - Integrate Thordata SERP API to provide `/v1/search`.
-  - Implement initial `/v1/agent` combining LLM with the RAG pipeline.
-- **v0.4+**
-  - MCP tools integration.
-  - LangChain / LlamaIndex / OpenAI Tools integrations.
-  - Performance tuning, multi‑tenant support, and smarter scheduling.
+- **v0.1** ✅ **Completed**
+  - ✅ Python client based on `thordata-sdk` with `scrape`, `crawl`, `map`, `search`, `agent`
+  - ✅ CLI with all subcommands
+  - ✅ HTTP API service (FastAPI) with all endpoints
+  - ✅ Docker / docker-compose support
+  - ✅ Job queue and status polling
+  - ✅ Production-ready features (rate limiting, retry, idempotency, webhooks)
+  - ✅ Cloud deployment (Render)
+  - ✅ Frontend website (GitHub Pages)
+
+- **v0.2+** (Future)
+  - Redis-backed job store for horizontal scaling
+  - MCP tools integration
+  - LangChain / LlamaIndex / OpenAI Tools integrations
+  - Performance tuning and advanced scheduling
 
 ---
 
