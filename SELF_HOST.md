@@ -161,6 +161,14 @@ For production, consider:
 5. **SSL/TLS**: Use Let's Encrypt for HTTPS
 6. **Response Size Limits**: Configure `MAX_RESPONSE_SIZE` to prevent OOM for large responses
 
+## Deploy to Render (Free PaaS)
+
+If you want a public **HTTPS** API endpoint quickly (e.g. for the GitHub Pages playground), use Render.
+
+See:
+
+- `DEPLOY_RENDER.md`
+
 Example systemd service (`/etc/systemd/system/thordata-firecrawl.service`):
 
 ```ini

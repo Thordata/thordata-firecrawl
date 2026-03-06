@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: thordata-firecrawl-api
+    env: python
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /health
+    buildCommand: pip install -U pip && pip install ".[server]"
+    startCommand: uvicorn thordata_firecrawl.api:app --host 0.0.0.0 --port $PORT
+    envVars:
+      # Recommended runtime version
+      - key: PYTHON_VERSION
+        value: 3.11.8
+
+      # Required for server-side fallback auth (requests without Authorization header)
+      # Note: Your GitHub Pages playground sends Authorization header, so this is optional there.
+      - key: THORDATA_API_KEY
+        sync: false
+
+      # Optional: restrict CORS origins in production.
+      # Example: https://thordata.github.io,https://your-custom-domain.com
+      - key: CORS_ALLOW_ORIGINS
+        sync: false
+
+      # Optional tuning
+      - key: LOG_LEVEL
+        value: INFO
+      - key: MAX_CONCURRENT_CRAWLS
+        value: "2"
+      - key: JOB_TTL_SECONDS
+        value: "3600"
+      - key: RATE_LIMIT_TOKEN_RPM
+        value: "60"
+      - key: RATE_LIMIT_IP_RPM
+        value: "120"
+      - key: RATE_LIMIT_WINDOW_SECONDS
+        value: "60"
+      - key: MAX_RESPONSE_SIZE
+        value: "10485760"

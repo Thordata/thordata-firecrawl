@@ -18,6 +18,43 @@ except ImportError:
     extract_structured_data = None
 
 
+def _retry_with_backoff(func, max_retries: int = 3, *args: Any, **kwargs: Any) -> Any:
+    """
+    Helper to retry Thordata SDK calls with exponential backoff.
+
+    We treat all exceptions as potentially transient network/5xx issues for now.
+    This keeps the implementation simple while dramatically improving robustness
+    against flaky networks and occasional upstream hiccups.
+    """
+    max_retries = max(0, int(max_retries or 0))
+    attempt = 0
+    delay = 1.0
+
+    while True:
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            if attempt >= max_retries:
+                logger.error(
+                    "Retry exhausted for %s after %d attempts: %s",
+                    getattr(func, "__name__", str(func)),
+                    attempt,
+                    str(e),
+                )
+                raise
+
+            attempt += 1
+            logger.warning(
+                "Retrying %s (attempt %d/%d) after error: %s",
+                getattr(func, "__name__", str(func)),
+                attempt,
+                max_retries,
+                str(e),
+            )
+            time.sleep(delay)
+            delay = min(delay * 2, 30.0)
+
+
 class ThordataCrawl:
     """
     High-level client for Thordata Crawl.

@@ -27,6 +27,8 @@ Thordata Crawl is a Firecrawl‑like Web Data API service built on top of Thorda
 - `test_api.py`: Quick test script to verify API functionality
 - `.env.example`: Environment variable template
 - `openapi.json`: OpenAPI specification exported from FastAPI app
+- `DEPLOY_RENDER.md`: Deploy the HTTP API to Render (free PaaS) with HTTPS
+- `render.yaml`: Render Blueprint for one-click deploy
 - `src/thordata_firecrawl/`: Core Python package
   - `__init__.py`: Package exports
   - `client.py`: High-level Python client (`ThordataCrawl`)
@@ -207,6 +209,12 @@ curl -X POST "http://localhost:3002/v1/agent" \
 ```
 
 Interactive API documentation is available at `http://localhost:3002/docs` (Swagger UI) and `http://localhost:3002/redoc` (ReDoc).
+
+### Deploy to a free PaaS (Render)
+
+If you want an **HTTPS endpoint** (so your GitHub Pages playground can call it directly), follow:
+
+- `DEPLOY_RENDER.md`
 
 ### CLI examples
 

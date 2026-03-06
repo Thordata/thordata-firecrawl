@@ -24,6 +24,7 @@ from urllib.parse import urlparse
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Header, Depends, Query, Request
 from fastapi.responses import HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, validator
 
 from .client import ThordataCrawl
@@ -462,6 +463,26 @@ app = FastAPI(
     title="Thordata Firecrawl API",
     description="Turn any website into AI-ready data with a single API",
     version="0.1.0",
+)
+
+
+# CORS configuration so that GitHub Pages playground and local/static sites can call the API.
+# - If CORS_ALLOW_ORIGINS is set, we honor that (comma-separated list) and allow credentials.
+# - Otherwise, we allow all origins without credentials (API key is sent in header, not cookies).
+_cors_origins_env = os.getenv("CORS_ALLOW_ORIGINS")
+if _cors_origins_env:
+    _allowed_origins = [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
+    _allow_credentials = True
+else:
+    _allowed_origins = ["*"]
+    _allow_credentials = False
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_allowed_origins,
+    allow_credentials=_allow_credentials,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
