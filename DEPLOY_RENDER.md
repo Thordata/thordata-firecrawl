@@ -18,19 +18,21 @@ This guide deploys the **Thordata Firecrawl API** to Render using the included `
 
 1. Push this repo to GitHub (make sure `render.yaml` is in the repo root).
 2. In Render dashboard, choose **New** → **Blueprint**.
-3. Select your GitHub repo.
-4. Render will detect `render.yaml` and create a Web Service:
+3. Select your GitHub repo (`Thordata/thordata-firecrawl`).
+4. **Blueprint Name** (optional): You can name it `thordata-firecrawl` or leave it as default.
+5. Render will detect `render.yaml` and create a Web Service:
    - Build: `pip install -U pip && pip install ".[server]"`
    - Start: `uvicorn thordata_firecrawl.api:app --host 0.0.0.0 --port $PORT`
-5. Set environment variables:
-   - **Required (recommended)**:
-     - `THORDATA_API_KEY` (or use a scraper token)
-   - **Recommended**:
-     - `CORS_ALLOW_ORIGINS`: comma-separated origins for your frontend(s), e.g.
-       - `https://thordata.github.io`
-       - `https://thordata.github.io,https://your-domain.com`
-   - Optional tuning (already defaulted in `render.yaml`): rate limits, response size, logging.
-6. Deploy. When finished, you’ll get an HTTPS URL like:
+6. Set environment variables:
+   - **Required**:
+     - `THORDATA_API_KEY` = `你的 Thordata API Key 或 Scraper Token`
+   - **Recommended** (for GitHub Pages):
+     - `CORS_ALLOW_ORIGINS` = `https://thordata.github.io`
+     - **Note**: CORS origin is protocol + domain (no path). Even though your site is at `https://thordata.github.io/thordata-firecrawl-site/`, use `https://thordata.github.io` (without the path).
+     - For multiple origins, use comma-separated: `https://thordata.github.io,https://your-domain.com`
+   - **Optional** (already defaulted in `render.yaml`): rate limits, response size, logging.
+7. Click **Create Blueprint** or **Apply** to start deployment.
+8. Wait for deployment to complete (3-5 minutes). You'll get an HTTPS URL like:
    - `https://<your-service>.onrender.com`
 
 ## Verify
@@ -54,9 +56,20 @@ Open the website:
 
 In Playground:
 
-- Set **API URL** to your Render URL (HTTPS).
+- Set **API URL** to your Render URL (HTTPS), e.g. `https://thordata-firecrawl-api.onrender.com`
 - Paste your token into **API Key**.
 - Click **Load Example** → **Send Request**.
+
+### CORS Configuration Explained
+
+**Important**: CORS (Cross-Origin Resource Sharing) checks the **origin** (protocol + domain + port), not the full URL path.
+
+- ✅ **Correct**: `CORS_ALLOW_ORIGINS=https://thordata.github.io`
+  - This allows requests from `https://thordata.github.io/thordata-firecrawl-site/` and any other path under `thordata.github.io`
+- ❌ **Wrong**: `CORS_ALLOW_ORIGINS=https://thordata.github.io/thordata-firecrawl-site/`
+  - This won't work because CORS doesn't check paths
+
+**Why**: When your browser makes a request from `https://thordata.github.io/thordata-firecrawl-site/` to `https://your-api.onrender.com`, the browser sends `Origin: https://thordata.github.io` (without the path). The API server checks if this origin is allowed.
 
 ## Notes / Limitations (Free tier)
 
