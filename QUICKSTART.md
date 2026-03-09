@@ -110,6 +110,14 @@ curl -X POST "http://localhost:3002/v1/search" \
 
 **返回搜索引擎结果列表**
 
+> ⚠️ **延迟与超时建议**
+>
+> - 首次调用 / 冷启动 或访问 JS 很重的网站时，`scrape / search / crawl / agent` 可能需要 10–30 秒。
+> - 建议客户端 HTTP 超时时间至少设置为 **30–60 秒**，特别是 `crawl` 和 `agent` 这类需要多步操作的接口。
+> - 如果在 Windows 终端打印中文 / emoji 导致编码错误，可以先设置：
+>   - PowerShell: `$env:PYTHONIOENCODING='utf-8'`
+>   - CMD: `set PYTHONIOENCODING=utf-8`
+
 ---
 
 ### 3. Map - URL 发现
