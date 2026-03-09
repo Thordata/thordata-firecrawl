@@ -515,8 +515,33 @@ def get_client(api_key: str = Depends(get_api_key)) -> ThordataCrawl:
 # Health check
 @app.get("/health")
 async def health():
-    """Health check endpoint."""
-    return {"status": "ok"}
+    """Health check endpoint with detailed diagnostics."""
+    import os
+    from dotenv import load_dotenv as maybe_load
+    
+    # Try to load .env if not already loaded
+    try:
+        maybe_load()
+    except Exception:
+        pass
+    
+    # Check critical environment variables
+    has_scraper_token = bool(os.getenv("THORDATA_SCRAPER_TOKEN") or os.getenv("THORDATA_API_KEY"))
+    has_llm_key = bool(os.getenv("OPENAI_API_KEY"))
+    llm_base = os.getenv("OPENAI_API_BASE", "not set")
+    llm_model = os.getenv("OPENAI_MODEL", "auto")
+    
+    return {
+        "status": "ok",
+        "version": "0.2.0",
+        "configuration": {
+            "scraper_api": "configured" if has_scraper_token else "missing",
+            "llm_service": "configured" if has_llm_key else "missing",
+            "llm_base_url": llm_base,
+            "llm_model": llm_model,
+        },
+        "timestamp": datetime.utcnow().isoformat(),
+    }
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -799,7 +824,15 @@ async def scrape_endpoint(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Scrape exception: url={request.url}, error={str(e)}", exc_info=True)
-        return ScrapeResponse(success=False, error=str(e))
+        # Provide more detailed error message for debugging
+        error_detail = str(e)
+        if "authentication" in error_detail.lower() or "unauthorized" in error_detail.lower():
+            error_detail = f"Authentication failed: {error_detail}. Please verify your API key is correct."
+        elif "timeout" in error_detail.lower():
+            error_detail = f"Request timeout: {error_detail}. The page may be slow to load or network is unstable."
+        elif "connection" in error_detail.lower():
+            error_detail = f"Connection error: {error_detail}. Please check if the URL is accessible."
+        return ScrapeResponse(success=False, error=error_detail)
 
 
 @app.post("/v1/batch-scrape", response_model=BatchScrapeResponse)
@@ -1100,6 +1133,8 @@ async def map_endpoint(
     await check_rate_limit(http_request, api_key)
     try:
         result = client.map(url=request.url, search=request.search)
+        if not result.get("success"):
+            logger.warning(f"Map failed: url={request.url}, error={result.get('error')}")
         return MapResponse(success=True, links=result.get("links", []))
     except ValueError as e:
         # Validation errors
@@ -1108,6 +1143,9 @@ async def map_endpoint(
     except Exception as e:
         logger.error(f"Map exception: url={request.url}, error={str(e)}", exc_info=True)
         # Keep response shape stable; surface error in a minimal way via empty links.
+        error_detail = str(e)
+        if "fetch" in error_detail.lower() or "connection" in error_detail.lower():
+            error_detail = f"Failed to fetch seed page: {error_detail}"
         return MapResponse(success=False, links=[])
 
 
@@ -1128,6 +1166,8 @@ async def search_endpoint(
             country=request.country,
             language=request.language,
         )
+        if not result.get("success"):
+            logger.warning(f"Search API returned failure: query={request.query}, error={result.get('error')}")
         return SearchResponse(success=True, data=result.get("data", {}))
     except ValueError as e:
         # Validation errors
@@ -1135,7 +1175,11 @@ async def search_endpoint(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Search exception: query={request.query}, error={str(e)}", exc_info=True)
-        return SearchResponse(success=False, data={"error": str(e)})
+        # Provide more detailed error for common issues
+        error_detail = str(e)
+        if "serp" in error_detail.lower() or "search engine" in error_detail.lower():
+            error_detail = f"SERP API error: {error_detail}. Please verify your Thordata API key has SERP access."
+        return SearchResponse(success=False, data={"error": error_detail})
 
 
 @app.post("/v1/search-and-scrape", response_model=SearchAndScrapeResponse)
@@ -1210,6 +1254,18 @@ async def agent_endpoint(
     """Run an agent task for structured extraction."""
     await check_rate_limit(http_request, api_key)
     try:
+        # Validate LLM configuration early
+        from ._llm import get_llm_client
+        llm_info = get_llm_client()
+        if llm_info is None:
+            logger.error("Agent request failed: LLM not configured")
+            return AgentResponse(
+                success=False,
+                data={},
+                sources=[],
+                error="LLM service not configured. Please set OPENAI_API_KEY and other required environment variables.",
+            )
+        
         options: Dict[str, Any] = {}
         if request.scrapeOptions:
             options.update(request.scrapeOptions)
@@ -1232,11 +1288,13 @@ async def agent_endpoint(
                 sources=result.get("sources", []),
             )
         else:
+            error_msg = result.get("error", "Unknown error")
+            logger.warning(f"Agent task failed: prompt={request.prompt[:100]}..., error={error_msg}")
             return AgentResponse(
                 success=False,
                 data={},
                 sources=result.get("sources", []),
-                error=result.get("error", "Unknown error"),
+                error=error_msg,
             )
     except ValueError as e:
         # Validation errors
@@ -1248,7 +1306,7 @@ async def agent_endpoint(
             success=False,
             data={},
             sources=[],
-            error=str(e),
+            error=f"Internal server error: {str(e)}",
         )
 
 

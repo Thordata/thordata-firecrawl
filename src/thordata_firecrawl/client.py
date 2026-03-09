@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import re
 import time
 import logging
 from typing import Any, Dict, List, Optional
@@ -53,6 +54,53 @@ def _retry_with_backoff(func, max_retries: int = 3, *args: Any, **kwargs: Any) -
             )
             time.sleep(delay)
             delay = min(delay * 2, 30.0)
+
+
+def _extract_basic_json_from_html(html: str) -> Dict[str, Any]:
+    """
+    Best-effort metadata extraction for `formats=["json"]`.
+
+    We intentionally keep this dependency-free (no BeautifulSoup) so the server
+    stays lightweight. This is not meant to be a full web extraction system.
+    """
+    if not html or not isinstance(html, str):
+        return {}
+
+    def _clean(s: str) -> str:
+        s = re.sub(r"\s+", " ", s or "").strip()
+        return s
+
+    # <title>...</title>
+    title_match = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
+    title = _clean(title_match.group(1)) if title_match else ""
+
+    # <meta name="description" content="...">
+    desc_match = re.search(
+        r'<meta[^>]+name=["\']description["\'][^>]*content=["\'](.*?)["\']',
+        html,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if not desc_match:
+        # Sometimes: <meta property="og:description" content="...">
+        desc_match = re.search(
+            r'<meta[^>]+property=["\']og:description["\'][^>]*content=["\'](.*?)["\']',
+            html,
+            re.IGNORECASE | re.DOTALL,
+        )
+    description = _clean(desc_match.group(1)) if desc_match else ""
+
+    # First H1 as a fallback "heading"
+    h1_match = re.search(r"<h1[^>]*>(.*?)</h1>", html, re.IGNORECASE | re.DOTALL)
+    h1 = _clean(re.sub(r"<[^>]+>", "", h1_match.group(1))) if h1_match else ""
+
+    out: Dict[str, Any] = {}
+    if title:
+        out["title"] = title
+    if description:
+        out["description"] = description
+    if h1 and h1 != title:
+        out["h1"] = h1
+    return out
 
 
 class ThordataCrawl:
@@ -149,14 +197,16 @@ class ThordataCrawl:
                     result["data"]["markdown"] = ""
                     result["data"]["markdown_error"] = str(e)
 
-        need_html = "html" in formats
+        need_json = "json" in formats
+        need_html_output = "html" in formats
         need_screenshot = "screenshot" in formats
+        need_html_fetch = need_html_output or need_json
 
-        if need_html or need_screenshot:
+        if need_html_fetch or need_screenshot:
             html_value: Optional[str] = None
             png_bytes: Optional[bytes] = None
 
-            if need_html and need_screenshot:
+            if need_html_fetch and need_screenshot:
                 # Request both HTML and PNG in a single Universal Scrape call.
                 combo = _retry_with_backoff(
                     self._client.universal_scrape,
@@ -176,7 +226,7 @@ class ThordataCrawl:
                     png_raw = combo.get("png")
                     if isinstance(png_raw, (bytes, bytearray)):
                         png_bytes = bytes(png_raw)
-            elif need_html:
+            elif need_html_fetch:
                 html = _retry_with_backoff(
                     self._client.universal_scrape,
                     max_retries=max_retries,
@@ -191,7 +241,7 @@ class ThordataCrawl:
                     follow_redirect=follow_redirect,
                 )
                 html_value = html if isinstance(html, str) else str(html)
-            else:  # need_screenshot only
+            else:  # screenshot only
                 png_raw = _retry_with_backoff(
                     self._client.universal_scrape,
                     max_retries=max_retries,
@@ -208,15 +258,18 @@ class ThordataCrawl:
                 if isinstance(png_raw, (bytes, bytearray)):
                     png_bytes = bytes(png_raw)
 
-            if html_value is not None:
+            if need_html_output and html_value is not None:
                 result["data"]["html"] = html_value
+
+            if need_json and html_value is not None:
+                result["data"]["json"] = _extract_basic_json_from_html(html_value)
 
             if png_bytes is not None:
                 # Return screenshot as a data URL for now; in future we may provide CDN URLs.
                 b64 = base64.b64encode(png_bytes).decode("ascii")
                 result["data"]["screenshot"] = f"data:image/png;base64,{b64}"
 
-        unsupported = [f for f in formats if f not in {"markdown", "html", "screenshot"}]
+        unsupported = [f for f in formats if f not in {"markdown", "html", "screenshot", "json"}]
         if unsupported:
             result["data"]["unsupported_formats"] = unsupported
 
@@ -226,7 +279,8 @@ class ThordataCrawl:
         has_markdown = bool(result["data"].get("markdown"))
         has_html = bool(result["data"].get("html"))
         has_screenshot = bool(result["data"].get("screenshot"))
-        if not (has_markdown or has_html or has_screenshot):
+        has_json = bool(result["data"].get("json"))
+        if not (has_markdown or has_html or has_screenshot or has_json):
             result["success"] = False
             result.setdefault("error", "No content returned from Thordata API. Check API key, URL, and scrape options.")
 

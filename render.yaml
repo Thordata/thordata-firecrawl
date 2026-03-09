@@ -5,8 +5,13 @@ services:
     plan: free
     autoDeploy: true
     healthCheckPath: /health
-    buildCommand: pip install -U pip && pip install ".[server]"
-    startCommand: uvicorn thordata_firecrawl.api:app --host 0.0.0.0 --port $PORT
+    # Enhanced health check for Render stability
+    region: oregon
+    disk:
+      mountPath: /tmp
+      sizeGB: 1
+    buildCommand: pip install -U pip && pip install ".[server,llm]"
+    startCommand: uvicorn thordata_firecrawl.api:app --host 0.0.0.0 --port $PORT --timeout-keep-alive 30
     envVars:
       # Recommended runtime version
       - key: PYTHON_VERSION
@@ -14,8 +19,19 @@ services:
 
       # Required for server-side fallback auth (requests without Authorization header)
       # Note: Your GitHub Pages playground sends Authorization header, so this is optional there.
+      - key: THORDATA_SCRAPER_TOKEN
+        sync: false
       - key: THORDATA_API_KEY
         sync: false
+
+      # LLM configuration for Agent functionality
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_API_BASE
+        value: https://api.siliconflow.cn/v1
+        generateValue: false
+      - key: OPENAI_MODEL
+        value: Qwen/Qwen2.5-7B-Instruct
 
       # Optional: restrict CORS origins in production.
       # Example: https://thordata.github.io,https://your-custom-domain.com
@@ -37,3 +53,6 @@ services:
         value: "60"
       - key: MAX_RESPONSE_SIZE
         value: "10485760"
+      # Critical for Render stability
+      - key: PORT
+        value: "10000"
